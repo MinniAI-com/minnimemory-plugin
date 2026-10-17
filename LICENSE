@@ -1,0 +1,45 @@
+MinniMemoryMCP License
+
+Copyright (c) 2026 MinniAI. All rights reserved.
+
+1. Grant. MinniAI gives you a free, non-exclusive, non-transferable, revocable
+   license to install and run this software package (the "Software"),
+   unmodified, for your own use. Use inside your own company or for your own
+   commercial projects is allowed.
+
+2. Restrictions. You may not:
+   (a) copy, redistribute, sublicense, sell, rent or host the Software for
+       others;
+   (b) modify, translate or create derivative works of the Software;
+   (c) reverse engineer, decompile or disassemble the Software, except where
+       applicable law forbids this restriction;
+   (d) remove or alter any copyright or license notice in the Software.
+
+3. Your files. The files the Software reads or writes on your machine (memory
+   files such as CLAUDE.md, the .minnimemory folder, backups) are yours.
+   MinniAI claims no rights in them. The Software makes no network calls and
+   sends nothing off your machine.
+
+4. Generated instructions. The instruction text, rule text and structure
+   that the Software writes into your memory files (the "Generated
+   Instructions") are MinniAI's copyrighted work. You may keep and use them
+   in memory files on machines you control, for your own or your company's
+   AI agents. You may not extract, republish, redistribute or sell the
+   Generated Instructions, include them in another product or service, or
+   use them, in whole or in part, as training or evaluation data for a
+   machine learning model.
+
+5. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   Back up your files before using write features such as --allow-write.
+
+6. Limitation of liability. IN NO EVENT SHALL MINNIAI BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT
+   OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+   THE USE OF OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. Termination. This license ends automatically if you break any of its
+   terms. When it ends, stop using the Software and delete your copies.
+
+8. Contact. https://minniai.com

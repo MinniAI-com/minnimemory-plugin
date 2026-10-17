@@ -1,0 +1,15 @@
+{
+  "name": "minniai",
+  "owner": {
+    "name": "MinniAI",
+    "url": "https://minniai.com"
+  },
+  "description": "MinniAI's Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "minnimemory",
+      "source": "./",
+      "description": "MinniMemoryMCP: curated memory for Claude Code, fewer tokens per turn."
+    }
+  ]
+}
