@@ -1,6 +1,6 @@
 # MinniMemoryMCP for Claude Code
 
-MinniMemoryMCP 1.3.5 as a Claude Code plugin. It audits the memory files Claude Code loads
+MinniMemoryMCP 1.3.6 as a Claude Code plugin. It audits the memory files Claude Code loads
 (`CLAUDE.md`, `AGENTS.md`, your memory folder) and compiles them into a small AlwaysOnMemory
 body that loads every turn, plus OnDemandMemory files that load only when a task needs them.
 Every change is lossless and undoable: the originals are backed up first and `undo` puts them
@@ -22,6 +22,9 @@ Built by [MinniAI](https://minniai.com).
 
 Or from your shell: `claude plugin marketplace add MinniAI-com/minnimemory-plugin`, then
 `claude plugin install minnimemory@minniai`.
+
+The plugin loads in Claude Code, and in Cowork when the session runs on your computer. In
+claude.ai chat it is ignored: a local MCP server and hooks do not run there.
 
 Pick one route per machine. If you ran `npx minnimemory install` before, run
 `npx -y minnimemory uninstall` first: otherwise the server is registered twice and every prompt
@@ -52,9 +55,32 @@ The same four steps are slash commands: `/mcp__minnimemory__init`, `doctor`, `ap
 - **Three hooks.** Before each prompt, `drift` checks whether your memory changed since the last
   apply and prints one line when it did; `hook` adds the one short section of memory that
   matches the prompt, inside a block marked as data, once per session, and never a section that
-  holds a credential-shaped line (it says so instead). The prompt hook is experimental: measured
-  offline, not yet in a live session. When Claude Code loads its instructions, `loaded` records
+  holds a credential-shaped line (it says so instead). The prompt hook's saving was measured in
+  live Claude Code sessions on our own memory folder (the number is on the docs page); on other
+  folders it is unmeasured. When Claude Code loads its instructions, `loaded` records
   which file it loaded in a local log that `init` can read later.
+- **Also in the bundle, never run by the plugin.** `server/cli.mjs` is the npm package's
+  command line, so it also contains the `install` and `uninstall` commands of the npx
+  route, which run `claude mcp add` and `claude mcp remove` and write the npx form of the
+  hooks into your settings, and a `mcp --profile full` maintainer mode with six more tools
+  (recall, outline, list, audit, plan, compile). The plugin starts the server with `mcp` alone,
+  the four-tool profile above; nothing in the plugin calls the rest. They are there for someone
+  who runs the file by hand.
+- **What "memory" means here.** Your own files on disk: `CLAUDE.md`, the files it imports, and
+  the memory folder Claude Code keeps for a project, read only when you point a tool at them.
+  The plugin never reads chat history, conversation summaries or uploaded files.
+
+## Try it on a sample first
+
+`examples/CLAUDE.md` in this folder is a fictional project's memory file. Copy it into an empty
+folder, open Claude Code there and say "Clean up my memory with minnimemory", then "Apply it",
+then "undo the memory compile". That is the whole loop on a file you cannot break.
+
+## Security reports
+
+Report a vulnerability to MinniMemory@gmail.com or as a GitHub issue on this repository; both
+are read by the maintainer. The plugin makes no network calls, so most reports will be about
+what it reads or writes on disk.
 - **What it writes, and where.** Under your Claude config folder (`~/.claude` unless
   `CLAUDE_CONFIG_DIR` says otherwise): `minnimemory/discovery.json` (where your memory loads
   from, written by `init`), `minnimemory/loads/<project>.jsonl` (the load log),

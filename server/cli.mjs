@@ -72,7 +72,7 @@ import {
   undoNoBackupMessage,
   undoRefusal,
   unitsOf
-} from "./chunks/chunk-OTXIIL3D.mjs";
+} from "./chunks/chunk-Z6CK4DYJ.mjs";
 import "./chunks/chunk-ZVIOPPZP.mjs";
 
 // src/surface/cli.ts
@@ -971,7 +971,7 @@ function runMcpCommand(target, values) {
   void (async () => {
     const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
       import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-P7FHADX4.mjs")
+      import("./chunks/mcpServer-3UTS2F5T.mjs")
     ]);
     const server = createMcpServer(root, {
       profile: profileName,
@@ -1431,7 +1431,7 @@ ${result.output}
     void (async () => {
       const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
         import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-P7FHADX4.mjs")
+        import("./chunks/mcpServer-3UTS2F5T.mjs")
       ]);
       process.stderr.write(`
   mcp: ${DISABLED_MESSAGE}

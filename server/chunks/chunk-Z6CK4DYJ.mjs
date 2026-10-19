@@ -10850,7 +10850,7 @@ function renderClaudeMap(map, options = {}) {
 }
 
 // src/surface/version.ts
-var VERSION = "1.3.5";
+var VERSION = "1.3.6";
 
 export {
   SEVERITY_ORDER,

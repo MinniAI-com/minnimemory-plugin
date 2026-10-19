@@ -2,7 +2,7 @@
 
 Code from these packages is bundled into `server/`.
 
-## @modelcontextprotocol/sdk 1.30.0 (MIT)
+## @modelcontextprotocol/sdk 1.32.1 (MIT)
 
 ```
 MIT License
