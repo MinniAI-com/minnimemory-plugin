@@ -1,7 +1,7 @@
 {
   "name": "minnimemory",
   "displayName": "MinniMemoryMCP",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "Curated memory for Claude Code: audits your memory files and compiles them into a small always-on body plus files loaded on demand, then shows what that saved. Offline, lossless, undoable.",
   "author": {
     "name": "MinniAI",
@@ -9,6 +9,7 @@
   },
   "homepage": "https://minniai.com",
   "repository": "https://github.com/MinniAI-com/minnimemory-plugin",
+  "icon": "./logo.png",
   "documentationUrl": "https://minniai.com/minnimemorymcp/docs",
   "supportUrl": "https://github.com/MinniAI-com/minnimemory-plugin/issues",
   "keywords": [

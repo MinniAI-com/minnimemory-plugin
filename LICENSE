@@ -7,39 +7,55 @@ Copyright (c) 2026 MinniAI. All rights reserved.
    unmodified, for your own use. Use inside your own company or for your own
    commercial projects is allowed.
 
-2. Restrictions. You may not:
+2. Distribution channels. MinniAI distributes the Software through the npm
+   registry, through Claude Code plugin marketplaces, and through software
+   directories run by Anthropic or by MinniAI. Those services, and the tools
+   that install from them (including a plugin manager that copies the Software
+   into a local cache and keeps earlier versions until it cleans them up), may
+   store, copy, scan, display and deliver unmodified copies of the Software for
+   that purpose. Receiving the Software through one of them is covered by
+   clause 1.
+
+3. Restrictions. Except as clause 2 allows, you may not:
    (a) copy, redistribute, sublicense, sell, rent or host the Software for
        others;
    (b) modify, translate or create derivative works of the Software;
-   (c) reverse engineer, decompile or disassemble the Software, except where
-       applicable law forbids this restriction;
-   (d) remove or alter any copyright or license notice in the Software.
+   (c) remove or alter any copyright or license notice in the Software.
+   Reading the Software's source is allowed. Reverse engineering, decompiling
+   or disassembling it for the purpose of building a competing product is not,
+   except where applicable law forbids this restriction.
 
-3. Your files. The files the Software reads or writes on your machine (memory
-   files such as CLAUDE.md, the .minnimemory folder, backups) are yours.
-   MinniAI claims no rights in them. The Software makes no network calls and
-   sends nothing off your machine.
+4. Your files. The files the Software reads or writes on your machine (memory
+   files such as CLAUDE.md, the .minnimemory folder, backups, logs and records
+   under your Claude configuration folder) are yours. MinniAI claims no rights
+   in them. The Software makes no network calls and sends nothing off your
+   machine.
 
-4. Generated instructions. The instruction text, rule text and structure
-   that the Software writes into your memory files (the "Generated
-   Instructions") are MinniAI's copyrighted work. You may keep and use them
-   in memory files on machines you control, for your own or your company's
-   AI agents. You may not extract, republish, redistribute or sell the
-   Generated Instructions, include them in another product or service, or
-   use them, in whole or in part, as training or evaluation data for a
-   machine learning model.
+5. Generated text. The Software writes short instruction lines and structure
+   into your memory files (the "Generated Text"). MinniAI holds the copyright
+   in the templates that produce it. The Generated Text itself is licensed to
+   you without restriction as part of your files: you may keep it, edit it,
+   commit it, publish it with your repository and share it with anyone, for
+   any purpose. The only thing you may not do is extract the Generated Text
+   from your files to build or sell a product that reproduces the Software's
+   function.
 
-5. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+6. Third-party components. The Software bundles open-source components
+   listed, with their licenses, in THIRD_PARTY_NOTICES.md. Those components
+   remain under their own licenses, which this license does not narrow.
+
+7. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
    KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-   Back up your files before using write features such as --allow-write.
+   The Software backs your files up before it changes them; keep your own
+   backups too.
 
-6. Limitation of liability. IN NO EVENT SHALL MINNIAI BE LIABLE FOR ANY
+8. Limitation of liability. IN NO EVENT SHALL MINNIAI BE LIABLE FOR ANY
    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT
    OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
    THE USE OF OR OTHER DEALINGS IN THE SOFTWARE.
 
-7. Termination. This license ends automatically if you break any of its
+9. Termination. This license ends automatically if you break any of its
    terms. When it ends, stop using the Software and delete your copies.
 
-8. Contact. https://minniai.com
+10. Contact. https://minniai.com

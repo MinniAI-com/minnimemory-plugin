@@ -1,34 +1,709 @@
 #!/usr/bin/env node
 /* MinniMemoryMCP (c) 2026 MinniAI. Licensed under the MinniMemoryMCP License, see LICENSE. */
 import { createRequire as __minniCreateRequire } from "node:module"; const require = __minniCreateRequire(import.meta.url);
-import{$ as Ve,A as Ae,Aa as st,B as E,Ba as it,C as V,Ca as oe,D as Ee,F as Ie,Fa as at,G as D,H as X,Ha as se,I as Ne,Ia as ie,J as Q,Ja as ae,K as Fe,Ka as dt,L as Le,La as lt,M as Be,Ma as ut,N as He,Na as ct,O as H,Oa as pt,P as Ue,Pa as de,Q as Je,Qa as le,R as _e,U as We,V as Ge,W as qe,X as ze,Y as Ye,Z,_ as Ke,b as P,ea as Xe,g,ga as ee,h as $e,ha as U,ia as te,j as xe,ja as J,k as Ce,ka as _,l as Se,la as ne,m as Oe,ma as re,n as Me,na as Qe,o as Y,oa as Ze,p as K,pa as et,q as je,qa as tt,r as Te,ra as W,sa as nt,v as Re,w as Pe,wa as rt,xa as ot,z as De}from"./chunks/chunk-I6CGXOLG.mjs";import"./chunks/chunk-EDORHNJU.mjs";import{spawnSync as Xt}from"node:child_process";import S from"node:fs";import Qt from"node:os";import x from"node:path";import{fileURLToPath as Zt}from"node:url";import{parseArgs as en}from"node:util";import Et from"node:fs";function It(e){return e.split(/\r?\n/).map(n=>n.trim()).filter(n=>n!==""&&!n.startsWith("#"))}function ft(e){let n;try{n=Et.readFileSync(e,"utf8")}catch{throw new D(`cannot read workload file: ${e}`)}let t=It(n);if(t.length===0)throw new D(`workload file has no tasks: ${e}
-  one task description per line, # for comments`);return t}function G(e){return`${e.onDemandFile}:${e.startLine}`}function Nt(e){return`${e.onDemandFile} > ${e.heading}`}function Ft(e,n){let t=P(e).flatMap(o=>xe({name:o.name,file:o.file},Ee(n,o.file)));return Ce(t,new Map(P(e).map(o=>[o.name,o.triggers])))}function mt(e,n,t={}){let o=t.root?Ft(e,t.root):void 0,r=o?"section":"file",c=new Set,u=new Map,d=new Map,l=new Map;for(let i of P(e))u.set(i.name,i.tokens),d.set(i.name,i.name),l.set(i.name,i.name);if(o)for(let i of o.units)u.set(G(i),i.tokens),d.set(G(i),Nt(i)),l.set(G(i),i.onDemandFile);let y=[],v=0;n.forEach((i,h)=>{let C=o?Oe(Se(o,i)).map(f=>G(f.unit)):Me(e,i).filter(f=>f.score>0).map(f=>f.name);C.length===0&&v++;let $=C.filter(f=>!c.has(f));for(let f of $)c.add(f);let b=[...c].reduce((f,z)=>f+(u.get(z)??0),0);y.push({turn:h+1,task:i,opened:$.map(f=>d.get(f)??f),carried:[...c].map(f=>d.get(f)??f),compiledTokens:e.prefix.after+b,baselineTokens:e.prefix.before})});let w=y.reduce((i,h)=>i+h.compiledTokens,0),m=y.reduce((i,h)=>i+h.baselineTokens,0),k=new Set([...c].map(i=>l.get(i)??i)),j=P(e).map(i=>i.name).filter(i=>k.has(i)),R=[...c].reduce((i,h)=>i+(u.get(h)??0),0),A=e.prefix.after+R,s=e.prefix.before-A,a=m-w,p;return a>=0?(p=y.findIndex((i,h)=>y.slice(0,h+1).reduce(($,b)=>$+b.baselineTokens-b.compiledTokens,0)>=0),p=p>=0?p+1:void 0):s>0&&(p=y.length+Math.ceil(-a/s)),{unit:r,turns:y,baselineTotal:m,compiledTotal:w,saving:a,savingPct:m===0?0:a/m*100,onDemandOpened:j,onDemandNeverOpened:P(e).map(i=>i.name).filter(i=>!k.has(i)),unroutedTurns:v,steadyStatePerTurn:A,steadyStateGainPerTurn:s,breakEvenTurn:p}}function Lt(e,n){return n===0?"0.0%":`${(e/n*100).toFixed(1)}%`}function ue(e){return e>=0?`saves ${g(e)}`:`costs ${g(-e)} more`}function ce(e,n){let t=[""];return t.push(`  exact, over ${g(e.turns)} turns. No workload, no assumptions.`),t.push(""),t.push(`    original memory file      ${g(e.baselinePerTurn).padStart(8)} tokens per turn`),t.push(`    compiled always-loaded    ${g(e.compiledPerTurn).padStart(8)} tokens per turn`),t.push(`    OnDemandMemory, all of it   ${g(e.totalOnDemandTokens).padStart(8)} tokens, on demand`),t.push(""),t.push("    best case, no OnDemandMemory file ever opened"),t.push(`      ${g(e.baselineTotal)} -> ${g(e.bestCaseTotal)} tokens, ${ue(e.bestCaseSaving)} (${Lt(e.bestCaseSaving,e.baselineTotal)})`),t.push(""),t.push("    worst case, every OnDemandMemory file opened on turn 1 and carried"),t.push(`      ${g(e.baselineTotal)} -> ${g(e.worstCaseTotal)} tokens, ${ue(e.worstCaseSaving)}`),t.push(""),t.push(`    break-even: ${g(e.breakEvenCarriedTokens)} tokens of OnDemandMemory can sit in`),t.push("    context from turn 1 to the end and come out even. Past that the compiled"),t.push("    shape costs more than the file it replaced."),t.push(""),t.push(`  tokenizer: ${n}, an offline estimate`),t.push(""),t.join(`
-`)}function ht(e,n){let t=[""],o=e.turns.length;if(t.push(`  MODEL, not a measurement. ${g(o)} turns from the workload you supplied.`),t.push(e.unit==="section"?"  routed at section level, as recall() does: a hit carries the section, not the file.":"  routed at file level, as an agent reading a whole file the OnDemandMemory list named would."),t.push(""),t.push(`    memory tokens over the session   ${g(e.baselineTotal)} -> ${g(e.compiledTotal)}`),t.push(`    ${ue(e.saving)}${e.saving>=0?` (${e.savingPct.toFixed(1)}%)`:""}`),t.push(""),e.onDemandOpened.length>0){t.push(`    opened and carried (${e.onDemandOpened.length}):`);for(let r of e.onDemandOpened)t.push(`      ${r}`);t.push("")}if(e.onDemandNeverOpened.length>0){t.push(`    never opened (${e.onDemandNeverOpened.length}) - this is where the saving comes from:`);for(let r of e.onDemandNeverOpened)t.push(`      ${r}`);t.push("")}return t.push("    one more turn, once everything this workload opens is in context:"),t.push(`      ${g(e.steadyStatePerTurn)} vs ${g(e.turns[0]?.baselineTokens??0)} baseline, ${e.steadyStateGainPerTurn>=0?`saves ${g(e.steadyStateGainPerTurn)}`:`costs ${g(-e.steadyStateGainPerTurn)} more`} per turn`),t.push(""),e.saving<0&&e.steadyStateGainPerTurn<=0?(t.push("    this workload never breaks even. The OnDemandMemory files it opens are large enough that"),t.push("    carrying them costs more every turn than the original file did, so a longer"),t.push("    session loses more, not less. Splitting differently, or not compiling this"),t.push("    file at all, is the honest answer here."),t.push("")):e.saving<0&&e.breakEvenTurn!==void 0?(t.push(`    behind by ${g(-e.saving)} at turn ${g(e.turns.length)}, recovering ${g(e.steadyStateGainPerTurn)} per turn:`),t.push(`    breaks even around turn ${g(e.breakEvenTurn)} if nothing further opens.`),t.push("")):e.saving>=0&&e.breakEvenTurn!==void 0&&(t.push(`    ahead from turn ${g(e.breakEvenTurn)} onward.`),t.push("")),e.unroutedTurns>0&&(t.push(`    ${g(e.unroutedTurns)} of ${g(o)} turns matched no OnDemandMemory file at all.`),t.push("    Those turns are cheap here, but a real agent may have needed something and"),t.push("    not been routed to it. Check them before trusting the total."),t.push("")),t.push("  what this number is conditional on:"),t.push("    - your workload being what a real session looks like. It is your file;"),t.push("      the tool cannot tell whether it is representative."),e.unit==="section"?(t.push("    - every section recall() returns being carried for the rest of the session,"),t.push("      up to its token cap per turn. A real agent may widen with outline() or"),t.push("      read the whole file anyway.")):(t.push("    - every OnDemandMemory file whose triggers match being opened in full. A real"),t.push("      agent may read one and stop, or ignore one the list offered.")),t.push("    - memory tokens only. Reasoning, tool results and conversation are excluded"),t.push("      from both sides, so this ratio is not a session bill."),t.push(""),t.push("  For observed usage against a live agent, measure a real multi-turn session with"),t.push("  and without the compile. That is the only path allowed to call a number measured."),t.push(""),t.push(`  tokenizer: ${n}, an offline estimate`),t.push(""),t.join(`
-`)}function gt(){return["","  No workload given, so only the exact bounds above are available.","","  A session number needs a workload: a file with one task description per line,","  describing what you actually do in this repo.","","    minnimemory bench --workload tasks.txt","","  minnimemory ships no default task list on purpose. A number produced from tasks","  the tool invented for itself would say more about the tool than about your repo.",""].join(`
-`)}import O from"node:fs";import M from"node:path";function I(e){let n=Te(e);return n&&Re(n)?n:void 0}function kt(e){return Pe(e)??`"${e.replace(/"/g,'\\"')}"`}function T(e){return e.map(kt).join(" ")}function vt(e){return e.map(kt)}function yt(e){if(!(!e.servedDirect||!/\/_npx\//.test(e.servedDirect)))return"note: this copy lives in the npx cache, which `npm cache clean` or a newer version can remove; the registration and the hook would then stop starting. For a durable install: npm i -g minnimemory, then minnimemory install --force"}function Bt(e){if(e==="cursor")return"~/.cursor/mcp.json";if(e==="windsurf")return"~/.codeium/windsurf/mcp_config.json"}function bt(e,n){let t=[];e.write&&t.push("--profile","full","--allow-write");let o=I(e.cliPath),r=o?["node",o,"mcp",...t]:["npx","-y","minnimemory","mcp",...t],c=["claude","mcp","add","minnimemory","-s",e.scope,"--",...r],u=["claude","mcp","remove","minnimemory","-s",e.scope],d=["claude","mcp","get","minnimemory"],l=["claude","--version"],y=T(c),v=JSON.stringify({mcpServers:{minnimemory:{command:"npx",args:["-y","minnimemory","mcp",...t]}}},null,2),w={scope:e.scope,servedFlags:t,servedArgv:r,...o?{servedDirect:o}:{},addArgv:c,removeArgv:u,getArgv:d,probeArgv:l,manualLine:y,jsonSnippet:v};if(e.host&&e.host!=="json"){let m=Bt(e.host);m&&(w.hostConfigPath=m)}return w}function $t(e){return e.error!==void 0&&e.error.code==="ENOENT"}var fe="npx -y minnimemory drift";function Ht(e){let n=I(e);return n?`node "${n}" drift`:fe}var me="npx -y minnimemory hook";function Ut(e){let n=I(e);return n?`node "${n}" hook`:me}function Jt(e){return typeof e=="string"&&(e===me||he(e,"hook"))}function _t(e,n){let t=u=>u.replace(/\\/g,"/").toLowerCase(),o=/^\s*Command:\s*(.*)$/m.exec(e)?.[1]?.trim(),r=/^\s*Args:\s*(.*)$/m.exec(e)?.[1]?.trim(),c=t(o?`${o} ${r??""}
-${e}`:e);return n.servedDirect?c.includes(t(n.servedDirect)):c.includes("npx -y minnimemory mcp")}function Wt(e){let n=/Scope:\s*(User|Project|Local)\b/i.exec(e);return n?n[1].toLowerCase():void 0}function he(e,n){let t=/^node "([^"]+)" (drift|loaded|hook)$/.exec(e);if(t===null||t[2]!==n)return!1;let o=t[1];return/minnimemory/i.test(o)||Gt(o)}function Gt(e){if(!M.isAbsolute(e))return!1;let n=M.dirname(e);for(let t=0;t<4;t++)try{return JSON.parse(O.readFileSync(M.join(n,"package.json"),"utf8")).name==="minnimemory"}catch{let o=M.dirname(n);if(o===n)return!1;n=o}return!1}function qt(e){return typeof e=="string"&&(e===fe||he(e,"drift"))}var ge="npx -y minnimemory loaded";function zt(e){let n=I(e);return n?`node "${n}" loaded`:ge}function Yt(e){return typeof e=="string"&&(e===ge||he(e,"loaded"))}function xt(e){let n=Ht(e),t=Ut(e),o=zt(e);return[{event:"UserPromptSubmit",command:n,fallback:fe,isOurs:r=>r===n||qt(r)},{event:"UserPromptSubmit",command:t,fallback:me,isOurs:r=>r===t||Jt(r)},{event:"InstructionsLoaded",command:o,fallback:ge,isOurs:r=>r===o||Yt(r)}]}function Ct(e,n){let t=n.cwd??process.cwd();return e==="user"?M.join(n.configDir??M.join(n.home,".claude"),"settings.json"):e==="project"?M.join(t,".claude","settings.json"):M.join(t,".claude","settings.local.json")}function St(e,n){let t=[];for(let o of e){if(!o||typeof o!="object")continue;let r=o.hooks;if(Array.isArray(r))for(let c of r){let u=c&&typeof c=="object"?c.command:void 0;n(u)&&t.push(u)}}return t}function Ot(e){if(!O.existsSync(e))return{};try{let n=JSON.parse(O.readFileSync(e,"utf8"));return!n||typeof n!="object"||Array.isArray(n)?void 0:n}catch{return}}function Mt(e,n){let t=`${JSON.stringify(n,null,2)}
-`,o=`${e}.minnimemory-${process.pid}.tmp`;O.writeFileSync(o,t,"utf8");try{O.renameSync(o,e)}catch{O.rmSync(o,{force:!0}),O.writeFileSync(e,t,"utf8")}}function jt(e){let n=e.hooks;return n&&typeof n=="object"&&!Array.isArray(n)?n:void 0}function Kt(e,n){let t=Ct(e.scope,n),o=xt(e.cliPath);if(e.dryRun)return{exitCode:0,output:o.map(l=>`would add the ${l.event} hook \`${l.command}\` to ${t}`).join(`
-`),path:t};let r=Ot(t);if(!r)return{exitCode:1,output:`install --hook: ${t} is not valid JSON; not touched.`,path:t};let c=jt(r)??{},u=[],d=!1;for(let l of o){let y=Array.isArray(c[l.event])?[...c[l.event]]:[],v=St(y,l.isOurs);if(v.includes(l.command)){u.push(l.event==="UserPromptSubmit"?`hook: \`${l.fallback.split(" ").pop()}\` already present in ${t}`:`hook: ${l.event} already present in ${t}`);continue}if(v.length>0){for(let w of y){let m=w&&typeof w=="object"?w.hooks:void 0;if(Array.isArray(m))for(let k of m)k&&typeof k=="object"&&l.isOurs(k.command)&&(k.command=l.command)}u.push(`hook: updated \`${v[0]}\` -> \`${l.command}\` in ${t} (${l.event}). Restart Claude Code.`)}else{let w={hooks:[{type:"command",command:l.command}]};y.push(w),u.push(`hook: added \`${l.command}\` to ${t} (${l.event}). Restart Claude Code.`)}c[l.event]=y,d=!0}return d&&(r.hooks=c,O.mkdirSync(M.dirname(t),{recursive:!0}),Mt(t,r)),{exitCode:0,output:u.join(`
-`),path:t}}function wt(e,n){let t=Ct(e.scope,n),o=xt(e.cliPath);if(e.dryRun)return{exitCode:0,output:o.map(d=>`would remove the ${d.event} hook (\`${d.fallback}\` or its direct node form) from ${t}`).join(`
-`),path:t};if(!O.existsSync(t))return{exitCode:0,output:`hook: nothing to remove (${t} does not exist)`,path:t};let r=Ot(t);if(!r)return{exitCode:1,output:`install --remove: ${t} is not valid JSON; not touched.`,path:t};let c=jt(r),u=[];for(let d of o){let l=c&&Array.isArray(c[d.event])?c[d.event]:void 0,y=l?St(l,d.isOurs):[];if(!c||!l||y.length===0)continue;let v=l.filter(w=>{if(!w||typeof w!="object")return!0;let m=w.hooks;if(!Array.isArray(m))return!0;let k=m.filter(j=>!(j&&typeof j=="object"&&d.isOurs(j.command)));return k.length===0?!1:(w.hooks=k,!0)});v.length===0?delete c[d.event]:c[d.event]=v,u.push(`hook: removed \`${y[0]}\` from ${t}`)}return u.length===0?{exitCode:0,output:`hook: nothing to remove in ${t}`,path:t}:(c&&Object.keys(c).length===0&&delete r.hooks,Mt(t,r),{exitCode:0,output:u.join(`
-`),path:t})}function Tt(e,n,t){let o=bt(e,n),r=[];if(e.dryRun){r.push(`would run: ${T(o.removeArgv)}`);let l=wt({...e,dryRun:!0},n);return r.push(l.output),{exitCode:0,output:`${r.join(`
-`)}
-`}}let c=t(o.probeArgv[0],o.probeArgv.slice(1)),u=0;if($t(c))r.push("the claude CLI is not on PATH; skipping the MCP registration removal.");else{let l=t(o.removeArgv[0],o.removeArgv.slice(1));r.push(`ran: ${T(o.removeArgv)}`),l.code!==0&&/no mcp server named/i.test(`${l.stdout}
-${l.stderr}`)?r.push(`nothing registered as minnimemory in ${e.scope} scope`):l.code!==0?(r.push(l.stderr.trim()),u=1):l.stdout.trim()&&r.push(l.stdout.trim())}let d=wt(e,n);return r.push(d.output),d.exitCode!==0&&(u=d.exitCode),{exitCode:u,output:`${r.join(`
-`)}
-`}}function Vt(e){let n=I(e);return`next: restart Claude Code, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${n?`node "${n}" init`:"npx -y minnimemory init"} <folder> --from-log\` from your project.`}function pe(e,n,t,o){if(e.hook){let r=Kt(e,n);t.push(r.output),r.exitCode!==0&&(o=r.exitCode)}return o===0&&t.push(Vt(e.cliPath)),{exitCode:o,output:`${t.join(`
-`)}
-`}}function Rt(e,n,t){let o=bt(e,n),r=[];if(e.hook&&e.host)return{exitCode:2,output:`--hook only applies to Claude Code
-`};if(e.host)return r.push(o.jsonSnippet),o.hostConfigPath?r.push("",`config file: ${o.hostConfigPath}`):r.push("",`add this under "mcpServers" in your host's MCP config file.`),{exitCode:0,output:`${r.join(`
-`)}
-`};if(e.dryRun){e.force&&r.push(`would run: ${T(o.removeArgv)}`),r.push(`would run: ${T(o.addArgv)}`);let k=yt(o);return k&&r.push(k),pe(e,n,r,0)}let c=t(o.probeArgv[0],o.probeArgv.slice(1));if($t(c))return r.push("the claude CLI is not on PATH. Register minnimemory manually:","",`  ${o.manualLine}`,"","or add this to another host's MCP config:","",o.jsonSnippet),{exitCode:2,output:`${r.join(`
-`)}
-`};let u=t(o.getArgv[0],o.getArgv.slice(1)),d=u.code===0?Wt(u.stdout):void 0,l=d!==void 0&&d!==e.scope;l&&r.push(`minnimemory is also registered at ${d} scope; that registration is left as it is (Claude Code uses local, then project, then user).`);let y=u.code===0&&!l,v=y&&!_t(u.stdout,o);if(y&&!e.force&&!v)return r.push("minnimemory is already registered.",`to change it: ${T(["npx","-y","minnimemory","install","--force","--scope",e.scope,...e.write?["--write"]:[]])}`),pe(e,n,r,0);if(y){v&&!e.force&&r.push("minnimemory is registered with a different command; repointing it at this copy.");let k=t(o.removeArgv[0],o.removeArgv.slice(1));if(k.code!==0)return r.push(`ran: ${T(o.removeArgv)}`,k.stderr.trim()),{exitCode:1,output:`${r.join(`
-`)}
-`}}let w=t(o.addArgv[0],o.addArgv.slice(1));if(r.push(`ran: ${T(o.addArgv)}`),w.code!==0)return r.push(w.stderr.trim()),{exitCode:1,output:`${r.join(`
-`)}
-`};w.stdout.trim()&&r.push(w.stdout.trim());let m=yt(o);return m&&r.push(m),pe(e,n,r,0)}var tn=!1,q=`
-minnimemory ${le}  the agent memory compiler
+import {
+  BenchError,
+  COMPILED_DIR_NAME,
+  DiscoveryError,
+  FolderError,
+  MAX_BUDGET,
+  McpTargetError,
+  PolicyError,
+  RULES,
+  RecallDirError,
+  VERSION,
+  allRouted,
+  applyFolderPlan,
+  applyFolderUndo,
+  backupBeforeForcedUndo,
+  bounds,
+  buildClaudeMap,
+  buildPreview,
+  buildSearchIndex,
+  claudeConfigDir,
+  claudeMapJson,
+  compiledFolders,
+  detectPhase,
+  directCliPath,
+  discover,
+  discoveryRecordPath,
+  exitCodeFor,
+  formatTokens,
+  initCommand,
+  isProfileName,
+  keptBackupsNote,
+  keptOnlyMessage,
+  leaveReason,
+  loadManifest,
+  loadOnDemandContent,
+  loadPolicy,
+  manifestLost,
+  memoryFolderMap,
+  parseHookInput,
+  planFolder,
+  planFolderUndo,
+  planLostManifestUndo,
+  planOldManifestUndo,
+  rankOnDemandFiles,
+  rankUnits,
+  readDiscovery,
+  readFolderManifest,
+  readLoadLog,
+  readOldManifestVersion,
+  readRepoRecord,
+  recall,
+  recallDir,
+  recordLoad,
+  recordedSet,
+  renderClaudeMap,
+  renderDriftNotice,
+  renderFolderPlan,
+  renderHook,
+  renderPreviewJson,
+  renderPreviewText,
+  repoRecordPath,
+  repoRecordedSet,
+  resolveReported,
+  saveDiscovery,
+  selectUnits,
+  shellSafe,
+  shellWord,
+  undoCommand,
+  undoNoBackupMessage,
+  undoRefusal,
+  unitsOf
+} from "./chunks/chunk-OTXIIL3D.mjs";
+import "./chunks/chunk-ZVIOPPZP.mjs";
+
+// src/surface/cli.ts
+import { spawnSync } from "node:child_process";
+import fs3 from "node:fs";
+import os from "node:os";
+import path2 from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+
+// src/bench/bench.ts
+import fs from "node:fs";
+function parseWorkload(content) {
+  return content.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !l.startsWith("#"));
+}
+function readWorkload(file) {
+  let content;
+  try {
+    content = fs.readFileSync(file, "utf8");
+  } catch {
+    throw new BenchError(`cannot read workload file: ${file}`);
+  }
+  const tasks = parseWorkload(content);
+  if (tasks.length === 0) {
+    throw new BenchError(`workload file has no tasks: ${file}
+  one task description per line, # for comments`);
+  }
+  return tasks;
+}
+function unitId(u) {
+  return `${u.onDemandFile}:${u.startLine}`;
+}
+function unitLabel(u) {
+  return `${u.onDemandFile} > ${u.heading}`;
+}
+function buildIndex(manifest, root) {
+  const units = allRouted(manifest).flatMap(
+    (m) => unitsOf({ name: m.name, file: m.file }, loadOnDemandContent(root, m.file))
+  );
+  return buildSearchIndex(units, new Map(allRouted(manifest).map((m) => [m.name, m.triggers])));
+}
+function model(manifest, tasks, options = {}) {
+  const index = options.root ? buildIndex(manifest, options.root) : void 0;
+  const unit = index ? "section" : "file";
+  const carried = /* @__PURE__ */ new Set();
+  const tokensOf = /* @__PURE__ */ new Map();
+  const labelOf = /* @__PURE__ */ new Map();
+  const onDemandFileOf = /* @__PURE__ */ new Map();
+  for (const m of allRouted(manifest)) {
+    tokensOf.set(m.name, m.tokens);
+    labelOf.set(m.name, m.name);
+    onDemandFileOf.set(m.name, m.name);
+  }
+  if (index) {
+    for (const u of index.units) {
+      tokensOf.set(unitId(u), u.tokens);
+      labelOf.set(unitId(u), unitLabel(u));
+      onDemandFileOf.set(unitId(u), u.onDemandFile);
+    }
+  }
+  const turns = [];
+  let unroutedTurns = 0;
+  tasks.forEach((task, i) => {
+    const matched = index ? selectUnits(rankUnits(index, task)).map((r) => unitId(r.unit)) : rankOnDemandFiles(manifest, task).filter((r) => r.score > 0).map((m) => m.name);
+    if (matched.length === 0) unroutedTurns++;
+    const opened2 = matched.filter((id) => !carried.has(id));
+    for (const id of opened2) carried.add(id);
+    const carriedTokens2 = [...carried].reduce((n, id) => n + (tokensOf.get(id) ?? 0), 0);
+    turns.push({
+      turn: i + 1,
+      task,
+      opened: opened2.map((id) => labelOf.get(id) ?? id),
+      carried: [...carried].map((id) => labelOf.get(id) ?? id),
+      compiledTokens: manifest.prefix.after + carriedTokens2,
+      baselineTokens: manifest.prefix.before
+    });
+  });
+  const compiledTotal = turns.reduce((n, t) => n + t.compiledTokens, 0);
+  const baselineTotal = turns.reduce((n, t) => n + t.baselineTokens, 0);
+  const touchedOnDemandFiles = new Set([...carried].map((id) => onDemandFileOf.get(id) ?? id));
+  const opened = allRouted(manifest).map((m) => m.name).filter((n) => touchedOnDemandFiles.has(n));
+  const carriedTokens = [...carried].reduce((n, id) => n + (tokensOf.get(id) ?? 0), 0);
+  const steadyStatePerTurn = manifest.prefix.after + carriedTokens;
+  const steadyStateGainPerTurn = manifest.prefix.before - steadyStatePerTurn;
+  const saving = baselineTotal - compiledTotal;
+  let breakEvenTurn;
+  if (saving >= 0) {
+    breakEvenTurn = turns.findIndex((_, i) => {
+      const upTo = turns.slice(0, i + 1);
+      return upTo.reduce((n, t) => n + t.baselineTokens - t.compiledTokens, 0) >= 0;
+    });
+    breakEvenTurn = breakEvenTurn >= 0 ? breakEvenTurn + 1 : void 0;
+  } else if (steadyStateGainPerTurn > 0) {
+    breakEvenTurn = turns.length + Math.ceil(-saving / steadyStateGainPerTurn);
+  }
+  return {
+    unit,
+    turns,
+    baselineTotal,
+    compiledTotal,
+    saving,
+    savingPct: baselineTotal === 0 ? 0 : saving / baselineTotal * 100,
+    onDemandOpened: opened,
+    onDemandNeverOpened: allRouted(manifest).map((m) => m.name).filter((n) => !touchedOnDemandFiles.has(n)),
+    unroutedTurns,
+    steadyStatePerTurn,
+    steadyStateGainPerTurn,
+    breakEvenTurn
+  };
+}
+
+// src/bench/benchReport.ts
+function pct(part, whole) {
+  if (whole === 0) return "0.0%";
+  return `${(part / whole * 100).toFixed(1)}%`;
+}
+function signed(n) {
+  return n >= 0 ? `saves ${formatTokens(n)}` : `costs ${formatTokens(-n)} more`;
+}
+function renderBounds(b, tokenizer) {
+  const out = [""];
+  out.push(`  exact, over ${formatTokens(b.turns)} turns. No workload, no assumptions.`);
+  out.push("");
+  out.push(`    original memory file      ${formatTokens(b.baselinePerTurn).padStart(8)} tokens per turn`);
+  out.push(`    compiled always-loaded    ${formatTokens(b.compiledPerTurn).padStart(8)} tokens per turn`);
+  out.push(`    OnDemandMemory, all of it   ${formatTokens(b.totalOnDemandTokens).padStart(8)} tokens, on demand`);
+  out.push("");
+  out.push(`    best case, no OnDemandMemory file ever opened`);
+  out.push(
+    `      ${formatTokens(b.baselineTotal)} -> ${formatTokens(b.bestCaseTotal)} tokens, ${signed(b.bestCaseSaving)} (${pct(b.bestCaseSaving, b.baselineTotal)})`
+  );
+  out.push("");
+  out.push(`    worst case, every OnDemandMemory file opened on turn 1 and carried`);
+  out.push(
+    `      ${formatTokens(b.baselineTotal)} -> ${formatTokens(b.worstCaseTotal)} tokens, ${signed(b.worstCaseSaving)}`
+  );
+  out.push("");
+  out.push(`    break-even: ${formatTokens(b.breakEvenCarriedTokens)} tokens of OnDemandMemory can sit in`);
+  out.push(`    context from turn 1 to the end and come out even. Past that the compiled`);
+  out.push(`    shape costs more than the file it replaced.`);
+  out.push("");
+  out.push(`  tokenizer: ${tokenizer}, an offline estimate`);
+  out.push("");
+  return out.join("\n");
+}
+function renderModel(m, tokenizer) {
+  const out = [""];
+  const turns = m.turns.length;
+  out.push(`  MODEL, not a measurement. ${formatTokens(turns)} turns from the workload you supplied.`);
+  out.push(
+    m.unit === "section" ? `  routed at section level, as recall() does: a hit carries the section, not the file.` : `  routed at file level, as an agent reading a whole file the OnDemandMemory list named would.`
+  );
+  out.push("");
+  out.push(
+    `    memory tokens over the session   ${formatTokens(m.baselineTotal)} -> ${formatTokens(m.compiledTotal)}`
+  );
+  out.push(`    ${signed(m.saving)}${m.saving >= 0 ? ` (${m.savingPct.toFixed(1)}%)` : ""}`);
+  out.push("");
+  if (m.onDemandOpened.length > 0) {
+    out.push(`    opened and carried (${m.onDemandOpened.length}):`);
+    for (const name of m.onDemandOpened) out.push(`      ${name}`);
+    out.push("");
+  }
+  if (m.onDemandNeverOpened.length > 0) {
+    out.push(`    never opened (${m.onDemandNeverOpened.length}) - this is where the saving comes from:`);
+    for (const name of m.onDemandNeverOpened) out.push(`      ${name}`);
+    out.push("");
+  }
+  out.push(`    one more turn, once everything this workload opens is in context:`);
+  out.push(
+    `      ${formatTokens(m.steadyStatePerTurn)} vs ${formatTokens(m.turns[0]?.baselineTokens ?? 0)} baseline, ${m.steadyStateGainPerTurn >= 0 ? `saves ${formatTokens(m.steadyStateGainPerTurn)}` : `costs ${formatTokens(-m.steadyStateGainPerTurn)} more`} per turn`
+  );
+  out.push("");
+  if (m.saving < 0 && m.steadyStateGainPerTurn <= 0) {
+    out.push(`    this workload never breaks even. The OnDemandMemory files it opens are large enough that`);
+    out.push(`    carrying them costs more every turn than the original file did, so a longer`);
+    out.push(`    session loses more, not less. Splitting differently, or not compiling this`);
+    out.push(`    file at all, is the honest answer here.`);
+    out.push("");
+  } else if (m.saving < 0 && m.breakEvenTurn !== void 0) {
+    out.push(
+      `    behind by ${formatTokens(-m.saving)} at turn ${formatTokens(m.turns.length)}, recovering ${formatTokens(m.steadyStateGainPerTurn)} per turn:`
+    );
+    out.push(`    breaks even around turn ${formatTokens(m.breakEvenTurn)} if nothing further opens.`);
+    out.push("");
+  } else if (m.saving >= 0 && m.breakEvenTurn !== void 0) {
+    out.push(`    ahead from turn ${formatTokens(m.breakEvenTurn)} onward.`);
+    out.push("");
+  }
+  if (m.unroutedTurns > 0) {
+    out.push(
+      `    ${formatTokens(m.unroutedTurns)} of ${formatTokens(turns)} turns matched no OnDemandMemory file at all.`
+    );
+    out.push(`    Those turns are cheap here, but a real agent may have needed something and`);
+    out.push(`    not been routed to it. Check them before trusting the total.`);
+    out.push("");
+  }
+  out.push(`  what this number is conditional on:`);
+  out.push(`    - your workload being what a real session looks like. It is your file;`);
+  out.push(`      the tool cannot tell whether it is representative.`);
+  if (m.unit === "section") {
+    out.push(`    - every section recall() returns being carried for the rest of the session,`);
+    out.push(`      up to its token cap per turn. A real agent may widen with outline() or`);
+    out.push(`      read the whole file anyway.`);
+  } else {
+    out.push(`    - every OnDemandMemory file whose triggers match being opened in full. A real`);
+    out.push(`      agent may read one and stop, or ignore one the list offered.`);
+  }
+  out.push(`    - memory tokens only. Reasoning, tool results and conversation are excluded`);
+  out.push(`      from both sides, so this ratio is not a session bill.`);
+  out.push("");
+  out.push(`  For observed usage against a live agent, measure a real multi-turn session with`);
+  out.push(`  and without the compile. That is the only path allowed to call a number measured.`);
+  out.push("");
+  out.push(`  tokenizer: ${tokenizer}, an offline estimate`);
+  out.push("");
+  return out.join("\n");
+}
+function renderNoWorkload() {
+  return [
+    "",
+    "  No workload given, so only the exact bounds above are available.",
+    "",
+    "  A session number needs a workload: a file with one task description per line,",
+    "  describing what you actually do in this repo.",
+    "",
+    "    minnimemory bench --workload tasks.txt",
+    "",
+    "  minnimemory ships no default task list on purpose. A number produced from tasks",
+    "  the tool invented for itself would say more about the tool than about your repo.",
+    ""
+  ].join("\n");
+}
+
+// src/runtime/install.ts
+import fs2 from "node:fs";
+import path from "node:path";
+function safeDirectCliPath(cliPath) {
+  const direct = directCliPath(cliPath);
+  return direct && shellSafe(direct) ? direct : void 0;
+}
+function quoteArg(arg) {
+  return shellWord(arg) ?? `"${arg.replace(/"/g, '\\"')}"`;
+}
+function formatCommand(argv) {
+  return argv.map(quoteArg).join(" ");
+}
+function shellArgs(args) {
+  return args.map(quoteArg);
+}
+function npxCacheNote(plan) {
+  if (!plan.servedDirect || !/\/_npx\//.test(plan.servedDirect)) return void 0;
+  return "note: this copy lives in the npx cache, which `npm cache clean` or a newer version can remove; the registration and the hook would then stop starting. For a durable install: npm i -g minnimemory, then minnimemory install --force";
+}
+function hostConfigPath(host) {
+  if (host === "cursor") return "~/.cursor/mcp.json";
+  if (host === "windsurf") return "~/.codeium/windsurf/mcp_config.json";
+  return void 0;
+}
+function planInstall(options, _env) {
+  const servedFlags = [];
+  if (options.write) servedFlags.push("--profile", "full", "--allow-write");
+  const servedDirect = safeDirectCliPath(options.cliPath);
+  const servedArgv = servedDirect ? ["node", servedDirect, "mcp", ...servedFlags] : ["npx", "-y", "minnimemory", "mcp", ...servedFlags];
+  const addArgv = ["claude", "mcp", "add", "minnimemory", "-s", options.scope, "--", ...servedArgv];
+  const removeArgv = ["claude", "mcp", "remove", "minnimemory", "-s", options.scope];
+  const getArgv = ["claude", "mcp", "get", "minnimemory"];
+  const probeArgv = ["claude", "--version"];
+  const manualLine = formatCommand(addArgv);
+  const jsonSnippet = JSON.stringify(
+    {
+      mcpServers: {
+        minnimemory: {
+          command: "npx",
+          args: ["-y", "minnimemory", "mcp", ...servedFlags]
+        }
+      }
+    },
+    null,
+    2
+  );
+  const plan = {
+    scope: options.scope,
+    servedFlags,
+    servedArgv,
+    ...servedDirect ? { servedDirect } : {},
+    addArgv,
+    removeArgv,
+    getArgv,
+    probeArgv,
+    manualLine,
+    jsonSnippet
+  };
+  if (options.host && options.host !== "json") {
+    const configPath = hostConfigPath(options.host);
+    if (configPath) plan.hostConfigPath = configPath;
+  }
+  return plan;
+}
+function isMissingBinary(outcome) {
+  return outcome.error !== void 0 && outcome.error.code === "ENOENT";
+}
+var DRIFT_HOOK_COMMAND = "npx -y minnimemory drift";
+function driftHookCommand(cliPath) {
+  const direct = safeDirectCliPath(cliPath);
+  return direct ? `node "${direct}" drift` : DRIFT_HOOK_COMMAND;
+}
+var MEMORY_HOOK_COMMAND = "npx -y minnimemory hook";
+function memoryHookCommand(cliPath) {
+  const direct = safeDirectCliPath(cliPath);
+  return direct ? `node "${direct}" hook` : MEMORY_HOOK_COMMAND;
+}
+function isMemoryHookCommand(command) {
+  return typeof command === "string" && (command === MEMORY_HOOK_COMMAND || isOwnNodeForm(command, "hook"));
+}
+function registrationMatches(getOutput, plan) {
+  const norm = (s) => s.replace(/\\/g, "/").toLowerCase();
+  const command = /^\s*Command:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
+  const args = /^\s*Args:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
+  const out = norm(command ? `${command} ${args ?? ""}
+${getOutput}` : getOutput);
+  return plan.servedDirect ? out.includes(norm(plan.servedDirect)) : out.includes("npx -y minnimemory mcp");
+}
+function registeredScope(getOutput) {
+  const m = /Scope:\s*(User|Project|Local)\b/i.exec(getOutput);
+  return m ? m[1].toLowerCase() : void 0;
+}
+function isOwnNodeForm(command, verb) {
+  const m = /^node "([^"]+)" (drift|loaded|hook)$/.exec(command);
+  if (m === null || m[2] !== verb) return false;
+  const file = m[1];
+  return /minnimemory/i.test(file) || ownPackageAt(file);
+}
+function ownPackageAt(file) {
+  if (!path.isAbsolute(file)) return false;
+  let dir = path.dirname(file);
+  for (let i = 0; i < 4; i++) {
+    try {
+      const pkg = JSON.parse(fs2.readFileSync(path.join(dir, "package.json"), "utf8"));
+      return pkg.name === "minnimemory";
+    } catch {
+      const up = path.dirname(dir);
+      if (up === dir) return false;
+      dir = up;
+    }
+  }
+  return false;
+}
+function isDriftHookCommand(command) {
+  return typeof command === "string" && (command === DRIFT_HOOK_COMMAND || isOwnNodeForm(command, "drift"));
+}
+var LOADED_HOOK_COMMAND = "npx -y minnimemory loaded";
+function loadedHookCommand(cliPath) {
+  const direct = safeDirectCliPath(cliPath);
+  return direct ? `node "${direct}" loaded` : LOADED_HOOK_COMMAND;
+}
+function isLoadedHookCommand(command) {
+  return typeof command === "string" && (command === LOADED_HOOK_COMMAND || isOwnNodeForm(command, "loaded"));
+}
+function ownHooks(cliPath) {
+  const drift = driftHookCommand(cliPath);
+  const memory = memoryHookCommand(cliPath);
+  const loaded = loadedHookCommand(cliPath);
+  return [
+    { event: "UserPromptSubmit", command: drift, fallback: DRIFT_HOOK_COMMAND, isOurs: (c) => c === drift || isDriftHookCommand(c) },
+    { event: "UserPromptSubmit", command: memory, fallback: MEMORY_HOOK_COMMAND, isOurs: (c) => c === memory || isMemoryHookCommand(c) },
+    { event: "InstructionsLoaded", command: loaded, fallback: LOADED_HOOK_COMMAND, isOurs: (c) => c === loaded || isLoadedHookCommand(c) }
+  ];
+}
+function hookSettingsPath(scope, env) {
+  const cwd = env.cwd ?? process.cwd();
+  if (scope === "user") return path.join(env.configDir ?? path.join(env.home, ".claude"), "settings.json");
+  if (scope === "project") return path.join(cwd, ".claude", "settings.json");
+  return path.join(cwd, ".claude", "settings.local.json");
+}
+function ourCommandsIn(entries, isOurs) {
+  const found = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const inner = entry["hooks"];
+    if (!Array.isArray(inner)) continue;
+    for (const h of inner) {
+      const command = h && typeof h === "object" ? h["command"] : void 0;
+      if (isOurs(command)) found.push(command);
+    }
+  }
+  return found;
+}
+function readSettings(settingsPath) {
+  if (!fs2.existsSync(settingsPath)) return {};
+  try {
+    const parsed = JSON.parse(fs2.readFileSync(settingsPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function writeSettings(settingsPath, settings) {
+  const text = `${JSON.stringify(settings, null, 2)}
+`;
+  const tmp = `${settingsPath}.minnimemory-${process.pid}.tmp`;
+  fs2.writeFileSync(tmp, text, "utf8");
+  try {
+    fs2.renameSync(tmp, settingsPath);
+  } catch {
+    fs2.rmSync(tmp, { force: true });
+    fs2.writeFileSync(settingsPath, text, "utf8");
+  }
+}
+function hooksOf(settings) {
+  const h = settings["hooks"];
+  return h && typeof h === "object" && !Array.isArray(h) ? h : void 0;
+}
+function installHook(options, env) {
+  const settingsPath = hookSettingsPath(options.scope, env);
+  const hooks = ownHooks(options.cliPath);
+  if (options.dryRun) {
+    return {
+      exitCode: 0,
+      output: hooks.map((h) => `would add the ${h.event} hook \`${h.command}\` to ${settingsPath}`).join("\n"),
+      path: settingsPath
+    };
+  }
+  const settings = readSettings(settingsPath);
+  if (!settings) {
+    return { exitCode: 1, output: `install --hook: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
+  }
+  const all = hooksOf(settings) ?? {};
+  const lines = [];
+  let changed = false;
+  for (const h of hooks) {
+    const entries = Array.isArray(all[h.event]) ? [...all[h.event]] : [];
+    const present = ourCommandsIn(entries, h.isOurs);
+    if (present.includes(h.command)) {
+      lines.push(h.event === "UserPromptSubmit" ? `hook: \`${h.fallback.split(" ").pop()}\` already present in ${settingsPath}` : `hook: ${h.event} already present in ${settingsPath}`);
+      continue;
+    }
+    if (present.length > 0) {
+      for (const entry of entries) {
+        const inner = entry && typeof entry === "object" ? entry["hooks"] : void 0;
+        if (!Array.isArray(inner)) continue;
+        for (const hk of inner) {
+          if (hk && typeof hk === "object" && h.isOurs(hk["command"])) {
+            hk["command"] = h.command;
+          }
+        }
+      }
+      lines.push(`hook: updated \`${present[0]}\` -> \`${h.command}\` in ${settingsPath} (${h.event}). Restart Claude Code.`);
+    } else {
+      const entry = { hooks: [{ type: "command", command: h.command }] };
+      entries.push(entry);
+      lines.push(`hook: added \`${h.command}\` to ${settingsPath} (${h.event}). Restart Claude Code.`);
+    }
+    all[h.event] = entries;
+    changed = true;
+  }
+  if (changed) {
+    settings["hooks"] = all;
+    fs2.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    writeSettings(settingsPath, settings);
+  }
+  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
+}
+function removeHook(options, env) {
+  const settingsPath = hookSettingsPath(options.scope, env);
+  const hooks = ownHooks(options.cliPath);
+  if (options.dryRun) {
+    return {
+      exitCode: 0,
+      output: hooks.map((h) => `would remove the ${h.event} hook (\`${h.fallback}\` or its direct node form) from ${settingsPath}`).join("\n"),
+      path: settingsPath
+    };
+  }
+  if (!fs2.existsSync(settingsPath)) {
+    return { exitCode: 0, output: `hook: nothing to remove (${settingsPath} does not exist)`, path: settingsPath };
+  }
+  const settings = readSettings(settingsPath);
+  if (!settings) {
+    return { exitCode: 1, output: `install --remove: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
+  }
+  const all = hooksOf(settings);
+  const lines = [];
+  for (const h of hooks) {
+    const entries = all && Array.isArray(all[h.event]) ? all[h.event] : void 0;
+    const removed = entries ? ourCommandsIn(entries, h.isOurs) : [];
+    if (!all || !entries || removed.length === 0) continue;
+    const kept = entries.filter((entry) => {
+      if (!entry || typeof entry !== "object") return true;
+      const inner = entry["hooks"];
+      if (!Array.isArray(inner)) return true;
+      const others = inner.filter((hk) => !(hk && typeof hk === "object" && h.isOurs(hk["command"])));
+      if (others.length === 0) return false;
+      entry["hooks"] = others;
+      return true;
+    });
+    if (kept.length === 0) delete all[h.event];
+    else all[h.event] = kept;
+    lines.push(`hook: removed \`${removed[0]}\` from ${settingsPath}`);
+  }
+  if (lines.length === 0) return { exitCode: 0, output: `hook: nothing to remove in ${settingsPath}`, path: settingsPath };
+  if (all && Object.keys(all).length === 0) delete settings["hooks"];
+  writeSettings(settingsPath, settings);
+  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
+}
+function runUninstall(options, env, runner) {
+  const plan = planInstall(options, env);
+  const lines = [];
+  if (options.dryRun) {
+    lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    const hookPreview = removeHook({ ...options, dryRun: true }, env);
+    lines.push(hookPreview.output);
+    return { exitCode: 0, output: `${lines.join("\n")}
+` };
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  let exitCode = 0;
+  if (isMissingBinary(probe)) {
+    lines.push("the claude CLI is not on PATH; skipping the MCP registration removal.");
+  } else {
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    lines.push(`ran: ${formatCommand(plan.removeArgv)}`);
+    if (removed.code !== 0 && /no mcp server named/i.test(`${removed.stdout}
+${removed.stderr}`)) {
+      lines.push(`nothing registered as minnimemory in ${options.scope} scope`);
+    } else if (removed.code !== 0) {
+      lines.push(removed.stderr.trim());
+      exitCode = 1;
+    } else if (removed.stdout.trim()) {
+      lines.push(removed.stdout.trim());
+    }
+  }
+  const hookResult = removeHook(options, env);
+  lines.push(hookResult.output);
+  if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
+  return { exitCode, output: `${lines.join("\n")}
+` };
+}
+function nextStep(cliPath) {
+  const direct = safeDirectCliPath(cliPath);
+  const init = direct ? `node "${direct}" init` : "npx -y minnimemory init";
+  return `next: restart Claude Code, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --from-log\` from your project.`;
+}
+function withHook(options, env, lines, exitCode) {
+  if (options.hook) {
+    const hookResult = installHook(options, env);
+    lines.push(hookResult.output);
+    if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
+  }
+  if (exitCode === 0) lines.push(nextStep(options.cliPath));
+  return { exitCode, output: `${lines.join("\n")}
+` };
+}
+function runInstall(options, env, runner) {
+  const plan = planInstall(options, env);
+  const lines = [];
+  if (options.hook && options.host) {
+    return { exitCode: 2, output: "--hook only applies to Claude Code\n" };
+  }
+  if (options.host) {
+    lines.push(plan.jsonSnippet);
+    if (plan.hostConfigPath) {
+      lines.push("", `config file: ${plan.hostConfigPath}`);
+    } else {
+      lines.push("", `add this under "mcpServers" in your host's MCP config file.`);
+    }
+    return { exitCode: 0, output: `${lines.join("\n")}
+` };
+  }
+  if (options.dryRun) {
+    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
+    const note2 = npxCacheNote(plan);
+    if (note2) lines.push(note2);
+    return withHook(options, env, lines, 0);
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  if (isMissingBinary(probe)) {
+    lines.push(
+      "the claude CLI is not on PATH. Register minnimemory manually:",
+      "",
+      `  ${plan.manualLine}`,
+      "",
+      "or add this to another host's MCP config:",
+      "",
+      plan.jsonSnippet
+    );
+    return { exitCode: 2, output: `${lines.join("\n")}
+` };
+  }
+  const existing = runner(plan.getArgv[0], plan.getArgv.slice(1));
+  const foundScope = existing.code === 0 ? registeredScope(existing.stdout) : void 0;
+  const otherScope = foundScope !== void 0 && foundScope !== options.scope;
+  if (otherScope) {
+    lines.push(`minnimemory is also registered at ${foundScope} scope; that registration is left as it is (Claude Code uses local, then project, then user).`);
+  }
+  const alreadyRegistered = existing.code === 0 && !otherScope;
+  const stale = alreadyRegistered && !registrationMatches(existing.stdout, plan);
+  if (alreadyRegistered && !options.force && !stale) {
+    lines.push(
+      "minnimemory is already registered.",
+      `to change it: ${formatCommand(["npx", "-y", "minnimemory", "install", "--force", "--scope", options.scope, ...options.write ? ["--write"] : []])}`
+    );
+    return withHook(options, env, lines, 0);
+  }
+  if (alreadyRegistered) {
+    if (stale && !options.force) lines.push("minnimemory is registered with a different command; repointing it at this copy.");
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    if (removed.code !== 0) {
+      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
+      return { exitCode: 1, output: `${lines.join("\n")}
+` };
+    }
+  }
+  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
+  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
+  if (added.code !== 0) {
+    lines.push(added.stderr.trim());
+    return { exitCode: 1, output: `${lines.join("\n")}
+` };
+  }
+  if (added.stdout.trim()) lines.push(added.stdout.trim());
+  const note = npxCacheNote(plan);
+  if (note) lines.push(note);
+  return withHook(options, env, lines, 0);
+}
+
+// src/surface/cli.ts
+var MCP_STASHED = false;
+var USAGE = `
+minnimemory ${VERSION}  the agent memory compiler
 
 usage: the four lifecycle verbs, the CLI and the MCP basic profile share.
 The only difference is who writes: the CLI writes to disk itself, the MCP tools return the
@@ -194,172 +869,828 @@ doctor options
 <folder> is required: a repo, a memory directory, or a single file. With none, minnimemory asks
 for it (in a terminal) or stops and says so. Type . for the current folder. An @import that
 points outside the folder is not read; the report names it.
-`;function nn(){let e=["","  rule set",""];for(let n of He)e.push(`  ${n.id.padEnd(8)}${n.severity.padEnd(6)}${n.title}`);return e.push(""),e.join(`
-`)}function rn(e,n){if(e===void 0)return n;if(e==="low"||e==="med"||e==="high")return e;throw new Error(`--fail-on must be one of low, med, high (got "${e}")`)}function Pt(e){return e?e.split(",").map(n=>n.trim()).filter(Boolean):[]}function on(e,n){return e.matches.length===0?`
-  no match for "${e.query}"
+`;
+function listRules() {
+  const lines = ["", "  rule set", ""];
+  for (const r of RULES) {
+    lines.push(`  ${r.id.padEnd(8)}${r.severity.padEnd(6)}${r.title}`);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+function parseSeverity(value, fallback) {
+  if (value === void 0) return fallback;
+  if (value === "low" || value === "med" || value === "high") return value;
+  throw new Error(`--fail-on must be one of low, med, high (got "${value}")`);
+}
+function parseIds(value) {
+  if (!value) return [];
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+function renderRecall(result, headingsOnly) {
+  if (result.matches.length === 0) {
+    return `
+  no match for "${result.query}"
 
-`:n?`${e.matches.map(t=>`${t.onDemandFile} > ${t.path.join(" > ")} (${t.tokens} tokens)`).join(`
-`)}
-`:`${e.matches.map(t=>`## ${t.onDemandFile} > ${t.path.join(" > ")} (lines ${t.startLine}-${t.endLine}, ${t.tokens} tokens, score ${t.score})
+`;
+  }
+  if (headingsOnly) {
+    return `${result.matches.map((m) => `${m.onDemandFile} > ${m.path.join(" > ")} (${m.tokens} tokens)`).join("\n")}
+`;
+  }
+  return `${result.matches.map(
+    (m) => `## ${m.onDemandFile} > ${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine}, ${m.tokens} tokens, score ${m.score})
 
-${t.content}`).join(`
+${m.content}`
+  ).join("\n\n---\n\n")}
+`;
+}
+function defaultCommand(opts) {
+  return opts.isTTY ? "usage" : "serve";
+}
+function processRunner() {
+  return (command, args) => {
+    const shell = process.platform === "win32";
+    const result = spawnSync(command, shell ? shellArgs(args) : args, {
+      encoding: "utf8",
+      shell
+    });
+    return {
+      code: result.status,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      error: result.error
+    };
+  };
+}
+function parseScope(value) {
+  if (value === void 0 || value === "user") return "user";
+  if (value === "project" || value === "local") return value;
+  throw new Error(`--scope must be one of user, project, local (got "${value}")`);
+}
+function parseHost(value) {
+  if (value === void 0) return void 0;
+  if (value === "cursor" || value === "windsurf" || value === "json") return value;
+  throw new Error(`--host must be one of cursor, windsurf, json (got "${value}")`);
+}
+function parseBudget(value) {
+  if (value === void 0) return void 0;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0 || n > MAX_BUDGET) throw new Error(`--budget must be a whole number of tokens from 1 to ${MAX_BUDGET.toLocaleString("en-US")} (got "${value}")`);
+  return Math.floor(n);
+}
+function runMcpCommand(target, values) {
+  let root;
+  try {
+    root = path2.resolve(target);
+    if (!fs3.existsSync(root) || !fs3.statSync(root).isDirectory()) {
+      throw new McpTargetError(`not a directory: ${root}`);
+    }
+  } catch (err) {
+    if (err instanceof McpTargetError) {
+      process.stderr.write(`
+  error: ${err.message}
 
----
+`);
+      return 2;
+    }
+    process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`)}
-`}function sn(e){return e.isTTY?"usage":"serve"}function Dt(){return(e,n)=>{let t=process.platform==="win32",o=Xt(e,t?vt(n):n,{encoding:"utf8",shell:t});return{code:o.status,stdout:o.stdout??"",stderr:o.stderr??"",error:o.error}}}function an(e){if(e===void 0||e==="user")return"user";if(e==="project"||e==="local")return e;throw new Error(`--scope must be one of user, project, local (got "${e}")`)}function dn(e){if(e!==void 0){if(e==="cursor"||e==="windsurf"||e==="json")return e;throw new Error(`--host must be one of cursor, windsurf, json (got "${e}")`)}}function At(e){if(e===void 0)return;let n=Number(e);if(!Number.isInteger(n)||n<=0||n>Y)throw new Error(`--budget must be a whole number of tokens from 1 to ${Y.toLocaleString("en-US")} (got "${e}")`);return Math.floor(n)}function ln(e,n){let t;try{if(t=x.resolve(e),!S.existsSync(t)||!S.statSync(t).isDirectory())throw new E(`not a directory: ${t}`)}catch(r){return r instanceof E?(process.stderr.write(`
-  error: ${r.message}
+`);
+    return 2;
+  }
+  const profileName = values.profile ?? "basic";
+  if (profileName !== "basic" && profileName !== "full") {
+    process.stderr.write(`
+  error: --profile must be one of basic, full (got "${profileName}")
 
-`),2):(process.stderr.write(`
-  unexpected error: ${r.stack??String(r)}
+`);
+    return 2;
+  }
+  void (async () => {
+    const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
+      import("./chunks/stdio-5QN5KZ3B.mjs"),
+      import("./chunks/mcpServer-P7FHADX4.mjs")
+    ]);
+    const server = createMcpServer(root, {
+      profile: profileName,
+      allowWrite: values["allow-write"] === true
+    });
+    await server.connect(new StdioServerTransport());
+  })().catch((err) => {
+    process.stderr.write(`
+  mcp server failed: ${err.message ?? String(err)}
+`);
+    process.exitCode = 1;
+  });
+  return 0;
+}
+function uninstallNotes() {
+  const folders = compiledFolders();
+  const lines = [];
+  if (folders.length > 0) {
+    lines.push("still compiled (they keep working without minnimemory; to put the originals back, undo each one):");
+    for (const d of folders) lines.push(`  ${undoCommand(d)}`);
+  }
+  lines.push(`kept: ${path2.dirname(discoveryRecordPath())} (init records, the load log, undo backups); delete it yourself once you have checked undo-backups/.`);
+  lines.push("restart Claude Code.");
+  return lines.join("\n");
+}
+var FOLDER_COMMANDS = /* @__PURE__ */ new Set(["init", "doctor", "apply", "undo", "bench"]);
+function doctorMayRun(target) {
+  if (readDiscovery(process.cwd())) return true;
+  const dir = folderOf(target);
+  return detectPhase(dir) === "compiled" || readFolderManifest(dir) !== void 0 || readRepoRecord(dir) !== void 0;
+}
+function folderOf(target) {
+  const abs = path2.resolve(target);
+  return fs3.existsSync(abs) && fs3.statSync(abs).isFile() ? path2.dirname(abs) : abs;
+}
+function repoRecordInUse(target) {
+  if (readDiscovery(process.cwd())) return void 0;
+  const dir = folderOf(target);
+  return readRepoRecord(dir) ? repoRecordPath(dir) : void 0;
+}
+function askForFolder(command) {
+  const usage = `minnimemory ${command} <folder>`;
+  if (process.stdin.isTTY !== true) {
+    process.stderr.write(`
+  error: name the folder to read: ${usage} (type . for the current folder)
 
-`),2)}let o=n.profile??"basic";return o!=="basic"&&o!=="full"?(process.stderr.write(`
-  error: --profile must be one of basic, full (got "${o}")
+`);
+    return void 0;
+  }
+  process.stdout.write(`
+  Which folder should minnimemory ${command} read? Only that folder and the folders below it are read.
+  folder: `);
+  const answer = readLineSync().trim();
+  if (answer === "") {
+    process.stderr.write(`
+  error: no folder given; run ${usage}
 
-`),2):((async()=>{let[{StdioServerTransport:r},{createMcpServer:c}]=await Promise.all([import("./chunks/stdio-4LUDCT2D.mjs"),import("./chunks/mcpServer-HWLFIKTV.mjs")]);await c(t,{profile:o,allowWrite:n["allow-write"]===!0}).connect(new r)})().catch(r=>{process.stderr.write(`
-  mcp server failed: ${r.message??String(r)}
-`),process.exitCode=1}),0)}function un(){let e=tt(),n=[];if(e.length>0){n.push("still compiled (they keep working without minnimemory; to put the originals back, undo each one):");for(let t of e)n.push(`  ${De(t)}`)}return n.push(`kept: ${x.dirname(Ze())} (init records, the load log, undo backups); delete it yourself once you have checked undo-backups/.`),n.push("restart Claude Code."),n.join(`
-`)}var cn=new Set(["init","doctor","apply","undo","bench"]);function pn(e){if(W(process.cwd()))return!0;let n=ye(e);return te(n)==="compiled"||re(n)!==void 0||Q(n)!==void 0}function ye(e){let n=x.resolve(e);return S.existsSync(n)&&S.statSync(n).isFile()?x.dirname(n):n}function fn(e){if(W(process.cwd()))return;let n=ye(e);return Q(n)?Ne(n):void 0}function mn(e){let n=`minnimemory ${e} <folder>`;if(process.stdin.isTTY!==!0){process.stderr.write(`
-  error: name the folder to read: ${n} (type . for the current folder)
-
-`);return}process.stdout.write(`
-  Which folder should minnimemory ${e} read? Only that folder and the folders below it are read.
-  folder: `);let t=hn().trim();if(t===""){process.stderr.write(`
-  error: no folder given; run ${n}
-
-`);return}return t}function hn(){let e=Buffer.alloc(1),n="";for(;;){let t;try{t=S.readSync(0,e,0,1,null)}catch{break}if(t===0)break;let o=e.toString("utf8");if(o===`
-`)break;o!=="\r"&&(n+=o)}return n}function gn(e){let n;try{n=en({args:e,allowPositionals:!0,strict:!0,options:{json:{type:"boolean",default:!1},write:{type:"boolean",default:!1},force:{type:"boolean",default:!1},update:{type:"boolean",default:!1},"allow-secrets":{type:"boolean",default:!1},"episodic-json":{type:"boolean",default:!1},"allow-write":{type:"boolean",default:!1},"follow-external-imports":{type:"boolean",default:!1},"include-auto-memory":{type:"boolean",default:!1},scope:{type:"string"},"dry-run":{type:"boolean",default:!1},"auto-memory":{type:"boolean",default:!1},hook:{type:"boolean",default:!1},"no-hook":{type:"boolean",default:!1},remove:{type:"boolean",default:!1},host:{type:"string"},"host-file":{type:"string",multiple:!0},loaded:{type:"string",multiple:!0},"memory-dir":{type:"string"},"from-log":{type:"boolean",default:!1},"only-this-folder":{type:"boolean",default:!1},turns:{type:"string"},workload:{type:"string"},"whole-files":{type:"boolean",default:!1},"max-tokens":{type:"string"},headings:{type:"boolean",default:!1},dir:{type:"string"},profile:{type:"string"},plan:{type:"string"},ci:{type:"boolean",default:!1},rules:{type:"boolean",default:!1},map:{type:"boolean",default:!1},diff:{type:"string"},"fail-on":{type:"string"},budget:{type:"string"},policy:{type:"string"},only:{type:"string"},ignore:{type:"string"},help:{type:"boolean",short:"h",default:!1},version:{type:"boolean",short:"v",default:!1}}})}catch(s){let a=s.message,p=/argument is ambiguous/.test(a)?`
-  (a value that starts with '-' must be written as --option=value; --budget must be positive anyway)`:"";return process.stderr.write(`
-  error: ${a}${p}
-${q}`),2}let{values:t,positionals:o}=n;if(t.help)return process.stdout.write(q),0;if(t.version)return process.stdout.write(`${le}
-`),0;if(t.rules)return process.stdout.write(nn()),0;let r;if(o[0]===void 0){if(sn({isTTY:process.stdin.isTTY===!0})==="usage")return process.stdout.write(q),0;r="mcp"}else r=o[0];let c=["include-auto-memory","follow-external-imports","auto-memory"].filter(s=>t[s]===!0);c.length>0&&process.stderr.write(`  note: ${c.map(s=>`--${s}`).join(", ")} no longer does anything: minnimemory reads only the folder you name
-`);let u=o[1]===void 0?void 0:/^~($|[\\/])/.test(o[1])?J(o[1]):o[1];if(u===void 0&&typeof t["memory-dir"]=="string"&&(u=t["memory-dir"]),u===void 0&&["doctor","apply","undo"].includes(r)){let s=W(process.cwd());s&&(u=s.target??s.memoryDir??s.project)}if(u===void 0&&cn.has(r)&&(u=mn(r),u===void 0))return 2;let d=u??".";if(t.policy!==void 0&&r!=="doctor")return process.stderr.write(`
+`);
+    return void 0;
+  }
+  return answer;
+}
+function readLineSync() {
+  const byte = Buffer.alloc(1);
+  let line = "";
+  for (; ; ) {
+    let n;
+    try {
+      n = fs3.readSync(0, byte, 0, 1, null);
+    } catch {
+      break;
+    }
+    if (n === 0) break;
+    const c = byte.toString("utf8");
+    if (c === "\n") break;
+    if (c !== "\r") line += c;
+  }
+  return line;
+}
+function main(argv) {
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      strict: true,
+      options: {
+        json: { type: "boolean", default: false },
+        write: { type: "boolean", default: false },
+        force: { type: "boolean", default: false },
+        update: { type: "boolean", default: false },
+        "allow-secrets": { type: "boolean", default: false },
+        "episodic-json": { type: "boolean", default: false },
+        "allow-write": { type: "boolean", default: false },
+        "follow-external-imports": { type: "boolean", default: false },
+        "include-auto-memory": { type: "boolean", default: false },
+        scope: { type: "string" },
+        "dry-run": { type: "boolean", default: false },
+        "auto-memory": { type: "boolean", default: false },
+        hook: { type: "boolean", default: false },
+        "no-hook": { type: "boolean", default: false },
+        remove: { type: "boolean", default: false },
+        host: { type: "string" },
+        "host-file": { type: "string", multiple: true },
+        loaded: { type: "string", multiple: true },
+        "memory-dir": { type: "string" },
+        "from-log": { type: "boolean", default: false },
+        "only-this-folder": { type: "boolean", default: false },
+        turns: { type: "string" },
+        workload: { type: "string" },
+        "whole-files": { type: "boolean", default: false },
+        "max-tokens": { type: "string" },
+        headings: { type: "boolean", default: false },
+        dir: { type: "string" },
+        profile: { type: "string" },
+        plan: { type: "string" },
+        ci: { type: "boolean", default: false },
+        rules: { type: "boolean", default: false },
+        map: { type: "boolean", default: false },
+        diff: { type: "string" },
+        "fail-on": { type: "string" },
+        budget: { type: "string" },
+        policy: { type: "string" },
+        only: { type: "string" },
+        ignore: { type: "string" },
+        help: { type: "boolean", short: "h", default: false },
+        version: { type: "boolean", short: "v", default: false }
+      }
+    });
+  } catch (err) {
+    const message = err.message;
+    const hint = /argument is ambiguous/.test(message) ? "\n  (a value that starts with '-' must be written as --option=value; --budget must be positive anyway)" : "";
+    process.stderr.write(`
+  error: ${message}${hint}
+${USAGE}`);
+    return 2;
+  }
+  const { values, positionals } = parsed;
+  if (values.help) {
+    process.stdout.write(USAGE);
+    return 0;
+  }
+  if (values.version) {
+    process.stdout.write(`${VERSION}
+`);
+    return 0;
+  }
+  if (values.rules) {
+    process.stdout.write(listRules());
+    return 0;
+  }
+  let command;
+  if (positionals[0] === void 0) {
+    if (defaultCommand({ isTTY: process.stdin.isTTY === true }) === "usage") {
+      process.stdout.write(USAGE);
+      return 0;
+    }
+    command = "mcp";
+  } else {
+    command = positionals[0];
+  }
+  const retired = ["include-auto-memory", "follow-external-imports", "auto-memory"].filter((f) => values[f] === true);
+  if (retired.length > 0) {
+    process.stderr.write(`  note: ${retired.map((f) => `--${f}`).join(", ")} no longer does anything: minnimemory reads only the folder you name
+`);
+  }
+  let named = positionals[1] === void 0 ? void 0 : /^~($|[\\/])/.test(positionals[1]) ? resolveReported(positionals[1]) : positionals[1];
+  if (named === void 0 && typeof values["memory-dir"] === "string") named = values["memory-dir"];
+  if (named === void 0 && ["doctor", "apply", "undo"].includes(command)) {
+    const rec = readDiscovery(process.cwd());
+    if (rec) named = rec.target ?? rec.memoryDir ?? rec.project;
+  }
+  if (named === void 0 && FOLDER_COMMANDS.has(command)) {
+    named = askForFolder(command);
+    if (named === void 0) return 2;
+  }
+  const target = named ?? ".";
+  if (values.policy !== void 0 && command !== "doctor") {
+    process.stderr.write(`
   error: --policy is a doctor option: \`minnimemory doctor <folder> --policy <file>\`
 
-`),2;if(t.diff!==void 0&&t.diff!=="summary"&&t.diff!=="full")return process.stderr.write(`
-  error: --diff takes summary or full, not "${t.diff}"
+`);
+    return 2;
+  }
+  if (values.diff !== void 0 && values.diff !== "summary" && values.diff !== "full") {
+    process.stderr.write(`
+  error: --diff takes summary or full, not "${values.diff}"
 
-`),2;let l=t.diff,y=[...t.loaded??[],...t["host-file"]??[]].map(s=>J(s));if(t["from-log"]===!0){let s=dt(process.cwd());if(!s)return process.stderr.write(`
+`);
+    return 2;
+  }
+  const diffMode = values.diff;
+  const reportedFiles = [...values.loaded ?? [], ...values["host-file"] ?? []].map((f) => resolveReported(f));
+  if (values["from-log"] === true) {
+    const log = readLoadLog(process.cwd());
+    if (!log) {
+      process.stderr.write(`
   error: no load log for ${process.cwd()}: open Claude Code in this folder once (install adds the hook that writes it), then run this again
 
-`),2;for(let a of Object.keys(s.files))/\.md$/i.test(a)&&S.existsSync(a)&&y.push(x.resolve(a))}let v=typeof t["memory-dir"]=="string"?J(t["memory-dir"]):void 0,m=y.length>0||v!==void 0||t["only-this-folder"]===!0?{files:[...new Set(y)],...v?{memoryDir:v}:{},source:t["from-log"]===!0&&(t.loaded??[]).length===0?"log":"terminal",...t["only-this-folder"]===!0?{onlyThisFolder:!0}:{}}:void 0,k=m||!["doctor","apply"].includes(r)?void 0:fn(d),j=m?void 0:nt(process.cwd())??(k?Fe(ye(d)):void 0);k&&process.stderr.write(`  note: this machine has no init record for this project, so ${r} uses the one in the repo: ${x.relative(process.cwd(),k).split(x.sep).join("/")||k}
-`);let R={cwd:process.cwd(),...m?{reported:m}:j?{reported:j}:{}};if(r==="install"||r==="uninstall"){let s;try{s={write:t.write===!0,scope:an(t.scope),dryRun:t["dry-run"]===!0,force:t.force===!0,host:dn(t.host),hook:t.host===void 0&&t["no-hook"]!==!0,cliPath:process.argv[1]?yn(process.argv[1]):void 0}}catch(C){return process.stderr.write(`
-  error: ${C.message}
+`);
+      return 2;
+    }
+    for (const f of Object.keys(log.files)) if (/\.md$/i.test(f) && fs3.existsSync(f)) reportedFiles.push(path2.resolve(f));
+  }
+  const memoryDirFlag = typeof values["memory-dir"] === "string" ? resolveReported(values["memory-dir"]) : void 0;
+  const anyReport = reportedFiles.length > 0 || memoryDirFlag !== void 0;
+  const freshReport = anyReport || values["only-this-folder"] === true ? { files: [...new Set(reportedFiles)], ...memoryDirFlag ? { memoryDir: memoryDirFlag } : {}, source: values["from-log"] === true && (values.loaded ?? []).length === 0 ? "log" : "terminal", ...values["only-this-folder"] === true ? { onlyThisFolder: true } : {} } : void 0;
+  const fromRepo = freshReport || !["doctor", "apply"].includes(command) ? void 0 : repoRecordInUse(target);
+  const recorded = freshReport ? void 0 : recordedSet(process.cwd()) ?? (fromRepo ? repoRecordedSet(folderOf(target)) : void 0);
+  if (fromRepo) {
+    process.stderr.write(`  note: this machine has no init record for this project, so ${command} uses the one in the repo: ${path2.relative(process.cwd(), fromRepo).split(path2.sep).join("/") || fromRepo}
+`);
+  }
+  const discoverOptions = {
+    cwd: process.cwd(),
+    ...freshReport ? { reported: freshReport } : recorded ? { reported: recorded } : {}
+  };
+  if (command === "install" || command === "uninstall") {
+    let options;
+    try {
+      options = {
+        write: values.write === true,
+        scope: parseScope(values.scope),
+        dryRun: values["dry-run"] === true,
+        force: values.force === true,
+        host: parseHost(values.host),
+        // The drift hook is on by default (DESIGN.md 6.12, decision 3); --no-hook opts out.
+        // Never on for --host: the hook is a Claude Code settings entry, not an MCP host concept
+        // (installHook/runInstall already refuse the combination, --host here just avoids
+        // tripping that refusal by default on every non-Claude-Code install).
+        hook: values.host === void 0 && values["no-hook"] !== true,
+        // The hook calls this very CLI by path (driftHookCommand); under npx that is the cached
+        // package, under a checkout it is dist/surface/cli.js.
+        cliPath: process.argv[1] ? realOrResolved(process.argv[1]) : void 0
+      };
+    } catch (err) {
+      process.stderr.write(`
+  error: ${err.message}
 
-`),2}let a={home:Qt.homedir(),platform:process.platform,cwd:process.cwd(),configDir:je()},p=r==="uninstall"||t.remove===!0,i=p?Tt(s,a,Dt()):Rt(s,a,Dt()),h=i.exitCode===0?process.stdout:process.stderr;return h.write(`
-${i.output}
-`),p&&h.write(`${un()}
+`);
+      return 2;
+    }
+    const env = { home: os.homedir(), platform: process.platform, cwd: process.cwd(), configDir: claudeConfigDir() };
+    const removing = command === "uninstall" || values.remove === true;
+    const result = removing ? runUninstall(options, env, processRunner()) : runInstall(options, env, processRunner());
+    const stream = result.exitCode === 0 ? process.stdout : process.stderr;
+    stream.write(`
+${result.output}
+`);
+    if (removing) stream.write(`${uninstallNotes()}
 
-`),i.exitCode}if(r==="init"||r==="apply"){if(r==="init"&&(t.write===!0||t.update===!0))return process.stderr.write(`
+`);
+    return result.exitCode;
+  }
+  if (command === "init" || command === "apply") {
+    if (command === "init" && (values.write === true || values.update === true)) {
+      process.stderr.write(`
   error: init never writes; use apply
 
-`),2;let s=t.profile??"auto";if(s!=="auto"&&!$e(s))return process.stderr.write(`
-  error: --profile must be one of auto, none, routing, full (got "${s}")
+`);
+      return 2;
+    }
+    const profileName = values.profile ?? "auto";
+    if (profileName !== "auto" && !isProfileName(profileName)) {
+      process.stderr.write(`
+  error: --profile must be one of auto, none, routing, full (got "${profileName}")
 
-`),2;let a;try{a=At(t.budget)}catch(b){return process.stderr.write(`
-  error: ${b.message}
+`);
+      return 2;
+    }
+    let budget;
+    try {
+      budget = parseBudget(values.budget);
+    } catch (err) {
+      process.stderr.write(`
+  error: ${err.message}
 
-`),2}let p=r==="apply",i=s==="auto"?void 0:s,h=t["episodic-json"]===!0,C=[...i?[`--profile ${i}`]:[],...h?["--episodic-json"]:[],...t["only-this-folder"]===!0?["--only-this-folder"]:[]],$={budget:a,force:t.force===!0,profileName:i,episodicJson:h,discover:R};try{if(!p){let we=S.existsSync(d)&&S.statSync(d).isFile()?x.dirname(x.resolve(d)):x.resolve(d),N;try{let B=_(d,R);B.shape==="memory-dir"&&(N=B)}catch{N=void 0}let F=N?pt(N):ut(we,{machine:!1,projectRoot:we});if(t.map===!0)return process.stdout.write(t.json?`${JSON.stringify(F,null,2)}
-`:de(F)),0;t.json||process.stdout.write(de(F));let L=se(d,$);if(t.json){let B=JSON.parse(ae(L,u,C));process.stdout.write(`${JSON.stringify({map:ct(F),...B},null,2)}
-`)}else process.stdout.write(ie(L,{color:!1,ci:t.ci===!0,target:u,flags:C,diff:l}));let ke=L.workspace.folderRoot??x.resolve(d),ve=L.workspace.claudeMemoryFolder?ke:void 0,be=et(process.cwd(),m?{...m,...m.memoryDir??ve?{memoryDir:m.memoryDir??ve}:{}}:void 0,ke);return m&&!t.json&&process.stdout.write(be?`  saved what Claude Code loads here for apply, doctor and undo: ${be}
+`);
+      return 2;
+    }
+    const write = command === "apply";
+    const explicitProfile = profileName === "auto" ? void 0 : profileName;
+    const episodicJson = values["episodic-json"] === true;
+    const cliFlags = [...explicitProfile ? [`--profile ${explicitProfile}`] : [], ...episodicJson ? ["--episodic-json"] : [], ...values["only-this-folder"] === true ? ["--only-this-folder"] : []];
+    const previewOptions2 = {
+      budget,
+      force: values.force === true,
+      profileName: explicitProfile,
+      episodicJson,
+      discover: discoverOptions
+    };
+    try {
+      if (!write) {
+        const mapDir = fs3.existsSync(target) && fs3.statSync(target).isFile() ? path2.dirname(path2.resolve(target)) : path2.resolve(target);
+        let folderWs;
+        try {
+          const ws = discover(target, discoverOptions);
+          if (ws.shape === "memory-dir") folderWs = ws;
+        } catch {
+          folderWs = void 0;
+        }
+        const map = folderWs ? memoryFolderMap(folderWs) : buildClaudeMap(mapDir, { machine: false, projectRoot: mapDir });
+        if (values.map === true) {
+          process.stdout.write(values.json ? `${JSON.stringify(map, null, 2)}
+` : renderClaudeMap(map));
+          return 0;
+        }
+        if (!values.json) process.stdout.write(renderClaudeMap(map));
+        const preview = buildPreview(target, previewOptions2);
+        if (values.json) {
+          const json = JSON.parse(renderPreviewJson(preview, named, cliFlags));
+          process.stdout.write(`${JSON.stringify({ map: claudeMapJson(map), ...json }, null, 2)}
+`);
+        } else process.stdout.write(renderPreviewText(preview, { color: false, ci: values.ci === true, target: named, flags: cliFlags, diff: diffMode }));
+        const folder = preview.workspace.folderRoot ?? path2.resolve(target);
+        const asMemory = preview.workspace.claudeMemoryFolder ? folder : void 0;
+        const where = saveDiscovery(process.cwd(), freshReport ? { ...freshReport, ...freshReport.memoryDir ?? asMemory ? { memoryDir: freshReport.memoryDir ?? asMemory } : {} } : void 0, folder);
+        if (freshReport && !values.json) process.stdout.write(where ? `  saved what Claude Code loads here for apply, doctor and undo: ${where}
 
-`:`  could not save the locations; pass them again to apply
-
-`),0}let b=_(d,R);if(b.shape==="memory-dir"&&!b.reported)return process.stderr.write(`
+` : "  could not save the locations; pass them again to apply\n\n");
+        return 0;
+      }
+      const workspace = discover(target, discoverOptions);
+      if (workspace.shape === "memory-dir" && !workspace.reported) {
+        process.stderr.write(
+          `
   error: apply refused: nothing reported the files Claude Code loads, so an import of this folder's files from outside it could break. Run from Claude Code (the agent passes them), or add --from-log (Claude Code's own load log for this folder), or --loaded <path> for each file. If nothing outside this folder loads it, pass --only-this-folder. Nothing was changed.
 
-`),2;let f=Je(b,{budget:a??b.manifest?.budget,profileName:i,episodicJson:h});if(t.plan!==void 0&&f.plan!==t.plan)return process.stderr.write(`
-  error: the plan on disk no longer matches --plan ${t.plan} (now ${f.plan}); run doctor again
+`
+        );
+        return 2;
+      }
+      const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget, profileName: explicitProfile, episodicJson });
+      if (values.plan !== void 0 && plan.plan !== values.plan) {
+        process.stderr.write(
+          `
+  error: the plan on disk no longer matches --plan ${values.plan} (now ${plan.plan}); run doctor again
 
-`),2;if(f.verdict==="nothing")return process.stdout.write(ee(f,{write:!0})),0;if(f.verdict==="leave"&&t.force!==!0)return process.stderr.write(`
-  error: ${Xe(f)} (${f.before} -> ${f.after} tokens; break-even ${f.bounds.breakEvenCarriedTokens} tokens of OnDemandMemory open all session)
+`
+        );
+        return 2;
+      }
+      if (plan.verdict === "nothing") {
+        process.stdout.write(renderFolderPlan(plan, { write: true }));
+        return 0;
+      }
+      if (plan.verdict === "leave" && values.force !== true) {
+        process.stderr.write(
+          `
+  error: ${leaveReason(plan)} (${plan.before} -> ${plan.after} tokens; break-even ${plan.bounds.breakEvenCarriedTokens} tokens of OnDemandMemory open all session)
   Pass --force to write it anyway.
 
-`),2;let z=ee(f,{write:!0,target:u});return _e(f,{allowSecrets:t["allow-secrets"]===!0}),process.stdout.write(z),0}catch(b){return b instanceof U||b instanceof H?(process.stderr.write(`
-  error: ${b.message}
+`
+        );
+        return 2;
+      }
+      const report = renderFolderPlan(plan, { write: true, target: named });
+      applyFolderPlan(plan, { allowSecrets: values["allow-secrets"] === true });
+      process.stdout.write(report);
+      return 0;
+    } catch (err) {
+      if (err instanceof DiscoveryError || err instanceof FolderError) {
+        process.stderr.write(`
+  error: ${err.message}
 
-`),2):(process.stderr.write(`
-  unexpected error: ${b.stack??String(b)}
+`);
+        return 2;
+      }
+      process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`),2)}}if(r==="undo")try{let s;try{s=_(d).folderRoot}catch($){if(!($ instanceof U))throw $}if(!s)return process.stdout.write(`
-  nothing to undo
+`);
+      return 2;
+    }
+  }
+  if (command === "undo") {
+    try {
+      let folderRoot;
+      try {
+        const ws = discover(target);
+        folderRoot = ws.folderRoot;
+      } catch (err) {
+        if (!(err instanceof DiscoveryError)) throw err;
+      }
+      if (!folderRoot) {
+        process.stdout.write("\n  nothing to undo\n\n");
+        return 0;
+      }
+      const currentManifest = readFolderManifest(folderRoot);
+      const oldVersion = currentManifest ? void 0 : readOldManifestVersion(folderRoot);
+      const outcome = oldVersion ? planOldManifestUndo(folderRoot, oldVersion) : !currentManifest && manifestLost(folderRoot) ? planLostManifestUndo(folderRoot) : planFolderUndo(folderRoot, currentManifest);
+      if (outcome.kind === "none") {
+        if (!currentManifest && manifestLost(folderRoot)) {
+          process.stderr.write(`
+  error: ${undoNoBackupMessage(folderRoot)}
 
-`),0;let a=re(s),p=a?void 0:Qe(s),i=p?Ve(s,p):!a&&ne(s)?ze(s):qe(s,a);if(i.kind==="none")return!a&&ne(s)?(process.stderr.write(`
-  error: ${Ue(s)}
+`);
+          return 2;
+        }
+        process.stdout.write("\n  nothing to undo\n\n");
+        return 0;
+      }
+      if (outcome.kind === "kept-only") {
+        process.stderr.write(`
+  error: undo has nothing left to restore here: ${keptOnlyMessage(outcome.kept)}
 
-`),2):(process.stdout.write(`
-  nothing to undo
-
-`),0);if(i.kind==="kept-only")return process.stderr.write(`
-  error: undo has nothing left to restore here: ${Ye(i.kept)}
-
-`),2;if(i.kind==="missing-original")return process.stderr.write(`
-  error: no original copy under ${K}/original/ for: ${i.files.join(", ")}.
+`);
+        return 2;
+      }
+      if (outcome.kind === "missing-original") {
+        process.stderr.write(
+          `
+  error: no original copy under ${COMPILED_DIR_NAME}/original/ for: ${outcome.files.join(", ")}.
   Backups stay on the machine that ran apply (they are gitignored), and a clone that re-applied backs up the compiled file, not the original; on a clone, the way back is git history.
 
-`),2;let h=We(i.plan);if(h&&t.force!==!0)return process.stderr.write(`
-  error: ${h}
+`
+        );
+        return 2;
+      }
+      const refusal = undoRefusal(outcome.plan);
+      if (refusal && values.force !== true) {
+        process.stderr.write(`
+  error: ${refusal}
 
-`),2;let C=h?Ge(i.plan):void 0;return Ke(i.plan),process.stdout.write(`
-  restored ${i.plan.operations.filter($=>$.op==="write"||$.op==="move").length} file(s) in ${s}
-  deleted: ${i.plan.operations.filter($=>$.op==="delete").length} path(s), ${K}/ ${i.plan.keptBackups?.length?"kept":"included"}
-`+(Z(i.plan)?`  ${Z(i.plan)}
-`:"")+(i.plan.left?.length?`  left in place: ${i.plan.left.join(", ")} (without manifest.json undo cannot tell which files there it wrote)
-`:"")+(C?`  the files as they were before this undo are copied to ${C.split(x.sep).join("/")}
-`:"")+`
-`),0}catch(s){return s instanceof H?(process.stderr.write(`
-  error: ${s.message}
+`);
+        return 2;
+      }
+      const savedTo = refusal ? backupBeforeForcedUndo(outcome.plan) : void 0;
+      applyFolderUndo(outcome.plan);
+      process.stdout.write(
+        `
+  restored ${outcome.plan.operations.filter((o) => o.op === "write" || o.op === "move").length} file(s) in ${folderRoot}
+  deleted: ${outcome.plan.operations.filter((o) => o.op === "delete").length} path(s), ${COMPILED_DIR_NAME}/ ${outcome.plan.keptBackups?.length ? "kept" : "included"}
+` + (keptBackupsNote(outcome.plan) ? `  ${keptBackupsNote(outcome.plan)}
+` : "") + (outcome.plan.left?.length ? `  left in place: ${outcome.plan.left.join(", ")} (without manifest.json undo cannot tell which files there it wrote)
+` : "") + (savedTo ? `  the files as they were before this undo are copied to ${savedTo.split(path2.sep).join("/")}
+` : "") + "\n"
+      );
+      return 0;
+    } catch (err) {
+      if (err instanceof FolderError) {
+        process.stderr.write(`
+  error: ${err.message}
 
-`),2):(process.stderr.write(`
-  unexpected error: ${s.stack??String(s)}
+`);
+        return 2;
+      }
+      process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`),2)}if(r==="mcp")return tn?((async()=>{let[{StdioServerTransport:s},{createDisabledMcpServer:a,DISABLED_MESSAGE:p}]=await Promise.all([import("./chunks/stdio-4LUDCT2D.mjs"),import("./chunks/mcpServer-HWLFIKTV.mjs")]);process.stderr.write(`
-  mcp: ${p}
+`);
+      return 2;
+    }
+  }
+  if (command === "mcp") {
+    if (!MCP_STASHED) return runMcpCommand(target, values);
+    void (async () => {
+      const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
+        import("./chunks/stdio-5QN5KZ3B.mjs"),
+        import("./chunks/mcpServer-P7FHADX4.mjs")
+      ]);
+      process.stderr.write(`
+  mcp: ${DISABLED_MESSAGE}
 
-`),await a().connect(new s)})().catch(s=>{process.stderr.write(`
-  mcp server failed: ${s.message??String(s)}
-`),process.exitCode=1}),0):ln(d,t);if(r==="recall"){let s=o.slice(2).join(" ").trim();if(!s)return process.stderr.write(`
+`);
+      await createDisabledMcpServer().connect(new StdioServerTransport());
+    })().catch((err) => {
+      process.stderr.write(`
+  mcp server failed: ${err.message ?? String(err)}
+`);
+      process.exitCode = 1;
+    });
+    return 0;
+  }
+  if (command === "recall") {
+    const query = positionals.slice(2).join(" ").trim();
+    if (!query) {
+      process.stderr.write(`
   error: recall needs a query: minnimemory recall <path> <query...>
 
-`),2;let a;if(t["max-tokens"]!==void 0){let i=Number(t["max-tokens"]);if(!Number.isFinite(i)||i<=0)return process.stderr.write(`
-  error: --max-tokens must be a positive number (got "${t["max-tokens"]}")
+`);
+      return 2;
+    }
+    let maxTokens;
+    if (values["max-tokens"] !== void 0) {
+      const n = Number(values["max-tokens"]);
+      if (!Number.isFinite(n) || n <= 0) {
+        process.stderr.write(`
+  error: --max-tokens must be a positive number (got "${values["max-tokens"]}")
 
-`),2;a=Math.floor(i)}let p=x.resolve(d);try{let i=te(p),h;if(i==="compiled")h=Ie(p,V(p),s,{maxTokens:a});else if(i==="memory-dir")h=ot(p,s,{maxTokens:a});else return process.stderr.write(`
-  error: ${p} is neither a compiled workspace (.minnimemory/manifest.json) nor a manifest-less memory directory (an index file plus topic files) - nothing for recall to query
+`);
+        return 2;
+      }
+      maxTokens = Math.floor(n);
+    }
+    const root = path2.resolve(target);
+    try {
+      const phase = detectPhase(root);
+      let result;
+      if (phase === "compiled") {
+        result = recall(root, loadManifest(root), query, { maxTokens });
+      } else if (phase === "memory-dir") {
+        result = recallDir(root, query, { maxTokens });
+      } else {
+        process.stderr.write(
+          `
+  error: ${root} is neither a compiled workspace (.minnimemory/manifest.json) nor a manifest-less memory directory (an index file plus topic files) - nothing for recall to query
 
-`),2;return process.stdout.write(on(h,t.headings===!0)),0}catch(i){return i instanceof E||i instanceof rt?(process.stderr.write(`
-  error: ${i.message}
+`
+        );
+        return 2;
+      }
+      process.stdout.write(renderRecall(result, values.headings === true));
+      return 0;
+    } catch (err) {
+      if (err instanceof McpTargetError || err instanceof RecallDirError) {
+        process.stderr.write(`
+  error: ${err.message}
 
-`),2):(process.stderr.write(`
-  unexpected error: ${i.stack??String(i)}
+`);
+        return 2;
+      }
+      process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`),2)}}if(r==="hook"){let s="";try{s=S.readFileSync(0,"utf8")}catch{s=""}let a;if(t["max-tokens"]!==void 0){let p=Number(t["max-tokens"]);Number.isFinite(p)&&p>0&&(a=Math.floor(p))}try{let p=oe(s),i=st(p,{headings:t.headings===!0,maxTokens:a,dir:t.dir});i&&process.stdout.write(`${i}
-`)}catch(p){process.stderr.write(`
-  hook: ${p.message??String(p)}
-`)}return 0}if(r==="loaded"){let s="";try{s=S.readFileSync(0,"utf8")}catch{s=""}try{lt(JSON.parse(s))}catch{}return 0}if(r==="drift"){let s="";try{s=S.readFileSync(0,"utf8")}catch{s=""}try{let a=oe(s),p=it(a);p&&process.stdout.write(`${p}
-`)}catch(a){process.stderr.write(`
-  drift: ${a.message??String(a)}
-`)}return 0}if(r==="bench")try{let s=x.resolve(d),a=V(s),p=t.turns===void 0?50:Number(t.turns);if(!Number.isFinite(p))throw new D(`--turns must be a positive whole number (got "${t.turns}")`);let i=X(a,p);if(t.workload===void 0)return t.json===!0?(process.stdout.write(`${JSON.stringify({bounds:i,tokenizer:a.tokenizer},null,2)}
-`),0):(process.stdout.write(ce(i,a.tokenizer)),process.stdout.write(gt()),0);let h=ft(t.workload),C=mt(a,h,t["whole-files"]===!0?{}:{root:s});return t.json===!0?(process.stdout.write(`${JSON.stringify({bounds:i,model:C,tokenizer:a.tokenizer},null,2)}
-`),0):(process.stdout.write(ce(i,a.tokenizer)),process.stdout.write(ht(C,a.tokenizer)),0)}catch(s){return s instanceof D||s instanceof E?(process.stderr.write(`
-  error: ${s.message}
+`);
+      return 2;
+    }
+  }
+  if (command === "hook") {
+    let raw = "";
+    try {
+      raw = fs3.readFileSync(0, "utf8");
+    } catch {
+      raw = "";
+    }
+    let maxTokens;
+    if (values["max-tokens"] !== void 0) {
+      const n = Number(values["max-tokens"]);
+      if (Number.isFinite(n) && n > 0) maxTokens = Math.floor(n);
+    }
+    try {
+      const input = parseHookInput(raw);
+      const text = renderHook(input, { headings: values.headings === true, maxTokens, dir: values.dir });
+      if (text) process.stdout.write(`${text}
+`);
+    } catch (err) {
+      process.stderr.write(`
+  hook: ${err.message ?? String(err)}
+`);
+    }
+    return 0;
+  }
+  if (command === "loaded") {
+    let raw = "";
+    try {
+      raw = fs3.readFileSync(0, "utf8");
+    } catch {
+      raw = "";
+    }
+    try {
+      recordLoad(JSON.parse(raw));
+    } catch {
+    }
+    return 0;
+  }
+  if (command === "drift") {
+    let raw = "";
+    try {
+      raw = fs3.readFileSync(0, "utf8");
+    } catch {
+      raw = "";
+    }
+    try {
+      const input = parseHookInput(raw);
+      const text = renderDriftNotice(input);
+      if (text) process.stdout.write(`${text}
+`);
+    } catch (err) {
+      process.stderr.write(`
+  drift: ${err.message ?? String(err)}
+`);
+    }
+    return 0;
+  }
+  if (command === "bench") {
+    try {
+      const root = path2.resolve(target);
+      const manifest = loadManifest(root);
+      const turns = values.turns === void 0 ? 50 : Number(values.turns);
+      if (!Number.isFinite(turns)) {
+        throw new BenchError(`--turns must be a positive whole number (got "${values.turns}")`);
+      }
+      const b = bounds(manifest, turns);
+      if (values.workload === void 0) {
+        if (values.json === true) {
+          process.stdout.write(`${JSON.stringify({ bounds: b, tokenizer: manifest.tokenizer }, null, 2)}
+`);
+          return 0;
+        }
+        process.stdout.write(renderBounds(b, manifest.tokenizer));
+        process.stdout.write(renderNoWorkload());
+        return 0;
+      }
+      const tasks = readWorkload(values.workload);
+      const m = model(manifest, tasks, values["whole-files"] === true ? {} : { root });
+      if (values.json === true) {
+        process.stdout.write(
+          `${JSON.stringify({ bounds: b, model: m, tokenizer: manifest.tokenizer }, null, 2)}
+`
+        );
+        return 0;
+      }
+      process.stdout.write(renderBounds(b, manifest.tokenizer));
+      process.stdout.write(renderModel(m, manifest.tokenizer));
+      return 0;
+    } catch (err) {
+      if (err instanceof BenchError || err instanceof McpTargetError) {
+        process.stderr.write(`
+  error: ${err.message}
 
-`),2):(process.stderr.write(`
-  unexpected error: ${s.stack??String(s)}
+`);
+        return 2;
+      }
+      process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`),2)}if(r!=="doctor")return process.stderr.write(`
-  error: unknown command "${r}"
-${q}`),2;if(!pn(d))return process.stderr.write(`
-  error: run init first: doctor checks memory init has already looked at, and init has no record for this project and ${d} has not been compiled. Run \`${Ae(d)}\`.
+`);
+      return 2;
+    }
+  }
+  if (command !== "doctor") {
+    process.stderr.write(`
+  error: unknown command "${command}"
+${USAGE}`);
+    return 2;
+  }
+  if (!doctorMayRun(target)) {
+    process.stderr.write(
+      `
+  error: run init first: doctor checks memory init has already looked at, and init has no record for this project and ${target} has not been compiled. Run \`${initCommand(target)}\`.
 
-`),2;let A;try{let s;if(t.policy!==void 0)try{s=Be(t.policy)}catch(a){throw a instanceof Le?new Error(`--policy: ${a.message}`):a}A={discover:R,budget:At(t.budget)??s?.budgets.always_on_tokens,policy:s,failOn:rn(t["fail-on"],"high"),only:Pt(t.only),ignore:Pt(t.ignore),force:t.force===!0}}catch(s){return process.stderr.write(`
-  error: ${s.message}
+`
+    );
+    return 2;
+  }
+  let previewOptions;
+  try {
+    let policy;
+    if (values.policy !== void 0) {
+      try {
+        policy = loadPolicy(values.policy);
+      } catch (err) {
+        if (err instanceof PolicyError) throw new Error(`--policy: ${err.message}`);
+        throw err;
+      }
+    }
+    previewOptions = {
+      discover: discoverOptions,
+      budget: parseBudget(values.budget) ?? policy?.budgets.always_on_tokens,
+      policy,
+      failOn: parseSeverity(values["fail-on"], "high"),
+      only: parseIds(values.only),
+      ignore: parseIds(values.ignore),
+      force: values.force === true
+    };
+  } catch (err) {
+    process.stderr.write(`
+  error: ${err.message}
 
-`),2}try{let s=se(d,A);if(t.json)process.stdout.write(`${ae(s,u)}
-`);else{let a=!t.ci&&!process.env.NO_COLOR&&process.stdout.isTTY===!0;process.stdout.write(ie(s,{color:a,ci:t.ci===!0,target:u,diff:l}))}return at(s.audit.findings,s.config.failOn)}catch(s){return s instanceof U||s instanceof H?(process.stderr.write(`
-  error: ${s.message}
+`);
+    return 2;
+  }
+  try {
+    const preview = buildPreview(target, previewOptions);
+    if (values.json) {
+      process.stdout.write(`${renderPreviewJson(preview, named)}
+`);
+    } else {
+      const color = !values.ci && !process.env["NO_COLOR"] && process.stdout.isTTY === true;
+      process.stdout.write(renderPreviewText(preview, { color, ci: values.ci === true, target: named, diff: diffMode }));
+    }
+    return exitCodeFor(preview.audit.findings, preview.config.failOn);
+  } catch (err) {
+    if (err instanceof DiscoveryError || err instanceof FolderError) {
+      process.stderr.write(`
+  error: ${err.message}
 
-`),2):(process.stderr.write(`
-  unexpected error: ${s.stack??String(s)}
+`);
+      return 2;
+    }
+    process.stderr.write(`
+  unexpected error: ${err.stack ?? String(err)}
 
-`),2)}}function yn(e){try{return S.realpathSync(e)}catch{return x.resolve(e)}}function wn(){let e=process.argv[1];if(!e)return!1;try{return S.realpathSync(Zt(import.meta.url))===S.realpathSync(e)}catch{return!1}}wn()&&(process.exitCode=gn(process.argv.slice(2)));export{tn as MCP_STASHED,sn as defaultCommand,gn as main};
+`);
+    return 2;
+  }
+}
+function realOrResolved(p) {
+  try {
+    return fs3.realpathSync(p);
+  } catch {
+    return path2.resolve(p);
+  }
+}
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs3.realpathSync(fileURLToPath(import.meta.url)) === fs3.realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+if (invokedDirectly()) {
+  process.exitCode = main(process.argv.slice(2));
+}
+export {
+  MCP_STASHED,
+  defaultCommand,
+  main
+};
