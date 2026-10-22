@@ -28,6 +28,7 @@ import {
   discover,
   discoveryRecordPath,
   exitCodeFor,
+  foreignMemoryFolderNote,
   formatTokens,
   initCommand,
   isProfileName,
@@ -72,7 +73,7 @@ import {
   undoNoBackupMessage,
   undoRefusal,
   unitsOf
-} from "./chunks/chunk-Z6CK4DYJ.mjs";
+} from "./chunks/chunk-CCF76DIW.mjs";
 import "./chunks/chunk-ZVIOPPZP.mjs";
 
 // src/surface/cli.ts
@@ -971,7 +972,7 @@ function runMcpCommand(target, values) {
   void (async () => {
     const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
       import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-3UTS2F5T.mjs")
+      import("./chunks/mcpServer-RKKRYRO4.mjs")
     ]);
     const server = createMcpServer(root, {
       profile: profileName,
@@ -1292,6 +1293,10 @@ ${result.output}
         if (freshReport && !values.json) process.stdout.write(where ? `  saved what Claude Code loads here for apply, doctor and undo: ${where}
 
 ` : "  could not save the locations; pass them again to apply\n\n");
+        const foreign = foreignMemoryFolderNote(process.cwd(), folder);
+        if (foreign) process.stderr.write(`  ${foreign}
+
+`);
         return 0;
       }
       const workspace = discover(target, discoverOptions);
@@ -1431,7 +1436,7 @@ ${result.output}
     void (async () => {
       const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
         import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-3UTS2F5T.mjs")
+        import("./chunks/mcpServer-RKKRYRO4.mjs")
       ]);
       process.stderr.write(`
   mcp: ${DISABLED_MESSAGE}
@@ -1632,6 +1637,7 @@ ${USAGE}`);
     previewOptions = {
       discover: discoverOptions,
       budget: parseBudget(values.budget) ?? policy?.budgets.always_on_tokens,
+      budgetFromPolicy: values.budget === void 0 && policy?.budgets.always_on_tokens !== void 0,
       policy,
       failOn: parseSeverity(values["fail-on"], "high"),
       only: parseIds(values.only),

@@ -27,6 +27,7 @@ import {
   folderPlanDeletes,
   folderPlanMoves,
   folderPlanSummary,
+  foreignMemoryFolderNote,
   initCommand,
   isEscapingRelative,
   keptBackupsNote,
@@ -72,7 +73,7 @@ import {
   undoCommand,
   undoNoBackupMessage,
   undoRefusal
-} from "./chunk-Z6CK4DYJ.mjs";
+} from "./chunk-CCF76DIW.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -11778,9 +11779,19 @@ function previewHandler(root, options, label, withMap) {
 ` : "\n  could not save these locations; pass loaded again to apply\n";
       }
       const projectNote = projectTargetNote(root, abs, preview.kind === "plan");
-      return { content: [{ type: "text", text: asData(format === "json" ? text : mapText + text) + savedNote + (projectNote ? `
+      const foreign = withMap ? foreignMemoryFolderNote(root, preview.workspace.folderRoot ?? abs) : void 0;
+      return {
+        content: [
+          {
+            type: "text",
+            text: asData(format === "json" ? text : mapText + text) + savedNote + (projectNote ? `
   ${projectNote}
-` : "") }] };
+` : "") + (foreign ? `
+  ${foreign}
+` : "")
+          }
+        ]
+      };
     } catch (err) {
       return errorResult(err);
     }

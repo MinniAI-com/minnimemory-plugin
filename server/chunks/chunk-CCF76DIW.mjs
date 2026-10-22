@@ -5203,6 +5203,13 @@ var LIST_LINE_COST = 22;
 var LIST_BASE_COST = 40;
 var ALWAYS_ON_HINTS = /\b(identity|overview|about|purpose|mission|principles?|conventions?|rules?|constraints?|boundar\w*|guardrails?|guidelines?|style|tone|standards?|polic(?:y|ies)|invariants?|philosophy|decisions?)\b/i;
 var OPERATING_HINTS = /\b(commands?|setup|build(?:ing)?|run(?:ning)?|tests?|testing|lint(?:ing)?|architecture|structure|layout|stack|workflow|development|getting started|what this is|how to work|working here)\b/i;
+var KEEP_MARKER = /^\s*<!--\s*minnimemory:keep\s*-->\s*$/i;
+var RULE_WORDS = /\b(hard stop|never|always|must)\b/i;
+function pinnedSection(heading, bodyLines, linesAbove) {
+  const firstBody = bodyLines.find((l) => l.trim() !== "") ?? "";
+  const lastAbove = [...linesAbove].reverse().find((l) => l.trim() !== "") ?? "";
+  return KEEP_MARKER.test(firstBody) || KEEP_MARKER.test(lastAbove) || RULE_WORDS.test(heading) || RULE_WORDS.test(firstBody);
+}
 function candidateTier(heading, bodyLines) {
   if (ALWAYS_ON_HINTS.test(heading) || classifyKind(heading, bodyLines) === "procedural") return 1;
   if (OPERATING_HINTS.test(heading)) return 2;
@@ -5366,9 +5373,10 @@ function compile(source, options) {
     const content = textOf(lines, s.startLine, endLine);
     const sectionLines = content.split("\n");
     const volatile = sectionVolatility(sectionLines);
-    const tier = options.alwaysOnSource ? 1 : candidateTier(s.heading, sectionLines.slice(1));
+    const pinned = pinnedSection(s.heading, sectionLines.slice(1), lines.slice(Math.max(0, s.startLine - 4), s.startLine - 1));
+    const tier = options.alwaysOnSource || pinned ? 1 : candidateTier(s.heading, sectionLines.slice(1));
     const alwaysOnCandidate = tier > 0 && strictSectionVolatilityReasons(sectionLines).length === 0;
-    return { section: s, content, endLine, tokens: estimateTokens(content), volatile, alwaysOnCandidate, tier };
+    return { section: s, content, endLine, tokens: estimateTokens(content), volatile, alwaysOnCandidate, tier, pinned };
   });
   if (preambleText.trim()) {
     entries2.unshift({
@@ -5457,8 +5465,9 @@ ${tail.map((part) => part.text).join("\n\n")}`;
       i++;
     }
   }
-  const byTier = (tier) => entries2.filter((e) => e.alwaysOnCandidate && e.tier === tier).sort((a, b) => a.tokens - b.tokens);
-  const candidates = [...byTier(1), ...byTier(2)];
+  const byTier = (tier) => entries2.filter((e) => e.alwaysOnCandidate && !e.pinned && e.tier === tier).sort((a, b) => a.tokens - b.tokens);
+  const pinnedFirst = entries2.filter((e) => e.alwaysOnCandidate && e.pinned).sort((a, b) => a.tokens - b.tokens);
+  const candidates = [...pinnedFirst, ...byTier(1), ...byTier(2)];
   const onDemandEstimate = entries2.length - candidates.length + (volatilePreamble.length > 0 ? 1 : 0);
   let used = options.alwaysOnSource ? 0 : estimateTokens(renderAlwaysOnBody("", title, "", [], profile2)) + LIST_BASE_COST + LIST_LINE_COST * onDemandEstimate;
   const kept = /* @__PURE__ */ new Set();
@@ -5469,7 +5478,7 @@ ${tail.map((part) => part.text).join("\n\n")}`;
     }
   }
   if (!options.alwaysOnSource && budget - used >= FILL_MIN_TOKENS) {
-    const left = entries2.filter((e) => e.alwaysOnCandidate && !kept.has(e)).sort((a, b) => a.tier - b.tier || a.section.startLine - b.section.startLine);
+    const left = entries2.filter((e) => e.alwaysOnCandidate && !kept.has(e)).sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || a.tier - b.tier || a.section.startLine - b.section.startLine);
     for (const candidate of left) {
       const split = splitHeadTail(candidate, budget - used, true);
       if (!split) continue;
@@ -5621,7 +5630,7 @@ ${e.content}`,
     after: estimateTokens(alwaysOnBody),
     instructionTokens: estimateTokens(renderInstructions(profile2)),
     budget,
-    demoted: demoted.sort((a, b) => a.section.startLine - b.section.startLine).map((d) => ({ heading: d.section.heading, tokens: d.tokens, startLine: d.section.startLine }))
+    demoted: demoted.sort((a, b) => a.section.startLine - b.section.startLine).map((d) => ({ heading: d.section.heading, tokens: d.tokens, startLine: d.section.startLine, ...d.pinned ? { rule: true } : {} }))
   };
 }
 
@@ -6829,6 +6838,7 @@ function hookTerms(hook) {
 var MM019_MIN_TERMS = 4;
 var MM019_OTHER_SHARE = 0.75;
 var MM019_GAP = 0.4;
+var MM019_SIZE_RATIO = 3;
 var mm019 = {
   id: "MM019",
   severity: "med",
@@ -6838,7 +6848,28 @@ var mm019 = {
     if (!list) return [];
     const others = workspace.files.filter((f) => f !== list && /\.md$/i.test(f.rel));
     const text2 = new Map(others.map((f) => [path4.resolve(f.abs), f.content.toLowerCase()]));
-    const share = (terms, body) => terms.filter((t) => body.includes(t)).length / terms.length;
+    let headingText;
+    const headingsOf = (key2) => {
+      headingText ??= new Map(others.map((f) => [path4.resolve(f.abs), text2.get(path4.resolve(f.abs)).split("\n").filter((l) => /^\s*#/.test(l)).join("\n")]));
+      return headingText.get(key2);
+    };
+    const holders = /* @__PURE__ */ new Map();
+    const headingHolders = /* @__PURE__ */ new Map();
+    const holdersOf = (t, inHeadings) => {
+      const cache = inHeadings ? headingHolders : holders;
+      let set = cache.get(t);
+      if (!set) {
+        const re = new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+        set = new Set([...text2.keys()].filter((key2) => re.test(inHeadings ? headingsOf(key2) : text2.get(key2))));
+        cache.set(t, set);
+      }
+      return set;
+    };
+    const weight = (t) => Math.log(1 + others.length / Math.max(1, holdersOf(t, false).size));
+    const share = (terms, key2, inHeadings = false) => {
+      const total = terms.reduce((s, t) => s + weight(t), 0);
+      return total === 0 ? 0 : terms.filter((t) => holdersOf(t, inHeadings).has(key2)).reduce((s, t) => s + weight(t), 0) / total;
+    };
     const out = [];
     list.lines.forEach((line, i) => {
       const m = line.match(/^\s*[-*+]\s+\[[^\]]*\]\(\s*<?([^)\s>#]+\.md)(?:#[^)\s>]*)?>?\s*\)/i);
@@ -6852,18 +6883,20 @@ var mm019 = {
       if (!abs) return;
       const terms = hookTerms(hookText(line));
       if (terms.length < MM019_MIN_TERMS) return;
-      const own = share(terms, text2.get(abs));
+      const ownLength = text2.get(abs).length;
+      const own = share(terms, abs);
       let best;
       for (const f of others) {
         const p = path4.resolve(f.abs);
         if (p === abs) continue;
-        const s = share(terms, text2.get(p));
+        const s = share(terms, p, text2.get(p).length > MM019_SIZE_RATIO * ownLength);
         if (!best || s > best.share) best = { file: f, share: s };
       }
       if (!best || best.share < MM019_OTHER_SHARE || best.share - own < MM019_GAP) return;
+      const plainOwn = terms.filter((t) => holdersOf(t, false).has(abs)).length / terms.length;
       out.push({
         rule: "MM019",
-        severity: "med",
+        severity: plainOwn >= 0.5 ? "low" : "med",
         message: `${list.rel} line ${i + 1} links ${m[1]}, but its description reads like ${best.file.rel} (${Math.round(best.share * 100)}% of its words there, ${Math.round(own * 100)}% in the linked file)`,
         file: list.rel,
         startLine: i + 1,
@@ -7432,6 +7465,9 @@ function projectKeyRoots(target) {
   const typed = projectKeyRoot(abs);
   if (typed !== roots[0]) roots.push(typed);
   return roots;
+}
+function claudeProjectSlug(absPath) {
+  return absPath.replace(/[^a-zA-Z0-9]/g, "-");
 }
 function expandHome(p) {
   return p.startsWith("~/") || p === "~" ? path6.join(os2.homedir(), p.slice(1)) : p;
@@ -8641,7 +8677,7 @@ function planFolder(ws, options = {}) {
       routed,
       // Only a section really moved out is "kept out": one folded back as a tiny piece stayed
       // (issue #254).
-      demoted: compiled.demoted.filter((d) => routed.some((r) => r.sourceStartLine <= d.startLine && d.startLine <= r.sourceEndLine)).map((d) => ({ heading: d.heading, tokens: d.tokens })),
+      demoted: compiled.demoted.filter((d) => routed.some((r) => r.sourceStartLine <= d.startLine && d.startLine <= r.sourceEndLine)).map((d) => ({ heading: d.heading, tokens: d.tokens, ...d.rule ? { rule: true } : {} })),
       moveOnly: false,
       unchanged
     });
@@ -9590,7 +9626,7 @@ function renderFolderPlan(plan, options) {
       lines.push(`    ${m.file.padEnd(52)}${formatTokens(m.tokens).padStart(7)}  ${m.reason.padEnd(13)} ${m.triggers.slice(0, 4).join(", ")}`);
     }
     if (s.demoted.length > 0) {
-      lines.push(`    kept out to fit the share (raise ${budgetOpt}): ${s.demoted.map((d) => `"${d.heading}" (${formatTokens(d.tokens)})`).join(", ")}`);
+      lines.push(`    kept out to fit the share (raise ${budgetOpt}): ${s.demoted.map((d) => `"${d.heading}" (${formatTokens(d.tokens)}${d.rule ? ", a rule" : ""})`).join(", ")}`);
     }
   }
   const unchanged = plan.sources.filter((s) => s.unchanged && !plan.accepted.includes(s.rel));
@@ -9737,6 +9773,9 @@ function saveDiscovery(cwd, set, target, now = /* @__PURE__ */ new Date()) {
   const all = readAll();
   const key2 = keyOf(cwd);
   if (!set && all.projects[key2]) return discoveryRecordPath();
+  for (const [k, e] of Object.entries(all.projects)) {
+    if (k !== key2 && !(e.project && fs9.existsSync(e.project))) delete all.projects[k];
+  }
   all.projects[key2] = {
     project: projectKeyRoots(cwd)[0] ?? path8.resolve(cwd),
     ...target ? { target: path8.resolve(target) } : {},
@@ -9754,6 +9793,15 @@ function saveDiscovery(cwd, set, target, now = /* @__PURE__ */ new Date()) {
   } catch {
     return void 0;
   }
+}
+function foreignMemoryFolderNote(cwd, folder) {
+  const rel = path8.relative(path8.join(claudeConfigDir(), "projects"), path8.resolve(folder));
+  if (!rel || rel.startsWith("..") || path8.isAbsolute(rel)) return void 0;
+  const [slug2, sub, ...rest] = rel.split(path8.sep);
+  if (!slug2 || sub !== "memory" || rest.length > 0) return void 0;
+  const own = new Set([path8.resolve(cwd), ...projectKeyRoots(cwd)].map((p) => claudeProjectSlug(p).toLowerCase()));
+  if (own.has(slug2.toLowerCase())) return void 0;
+  return `warning: this is the Claude Code memory folder of another project (${slug2}), not of ${path8.resolve(cwd)}. The record was saved for ${path8.resolve(cwd)}; if you meant that project, run init from its folder.`;
 }
 function compiledFolders() {
   const found = /* @__PURE__ */ new Map();
@@ -10048,6 +10096,16 @@ function quoteFenceLines(body) {
     return `${line.slice(0, end)} (quoted)${line.slice(end)}`;
   });
 }
+function alwaysLoadedFiles(cwd) {
+  const keys = /* @__PURE__ */ new Set();
+  if (!cwd) return keys;
+  for (const file of readDiscovery(path11.resolve(cwd))?.files ?? []) {
+    if (!fs12.existsSync(file)) continue;
+    keys.add(pathKey(file));
+    for (const imported of resolveImports(file, path11.dirname(file), true).files) keys.add(pathKey(imported));
+  }
+  return keys;
+}
 function resolveTarget(input, options) {
   if (options.dir) {
     const phase = detectPhase(options.dir);
@@ -10073,7 +10131,10 @@ function renderHook(input, options = {}) {
       const manifest = loadManifest(target.dir);
       matches = recall(target.dir, manifest, prompt, { maxTokens, includeAlwaysOn: true }).matches;
     } else {
-      matches = recallDir(target.dir, prompt, { maxTokens }).matches;
+      const loaded = alwaysLoadedFiles(input.cwd);
+      matches = recallDir(target.dir, prompt, { maxTokens }).matches.map(
+        (m) => loaded.has(pathKey(path11.join(target.dir, m.file))) ? { ...m, alwaysOn: true } : m
+      );
     }
   } catch {
     return "";
@@ -10086,7 +10147,7 @@ function renderHook(input, options = {}) {
   matches = matches.filter((m) => m.matched >= needed);
   if (matches.length === 0) return "";
   const top = matches[0];
-  if (top.tokens > (options.unitMaxTokens ?? HOOK_UNIT_MAX_TOKENS)) return "";
+  const pointerOnly = top.tokens > (options.unitMaxTokens ?? HOOK_UNIT_MAX_TOKENS);
   matches = [top];
   const sessionId = (input.sessionId ?? "").trim();
   const key2 = `${top.file}:${top.startLine}-${top.endLine}`;
@@ -10097,7 +10158,7 @@ function renderHook(input, options = {}) {
     if (placed.has(key2)) return "";
     stamp = { file, placed };
   }
-  const secrets = secretFindings(unitAsFile(top.onDemandFile, top.content, top.tokens));
+  const secrets = pointerOnly ? [] : secretFindings(unitAsFile(top.onDemandFile, top.content, top.tokens));
   if (secrets.length > 0) {
     if (stamp) {
       stamp.placed.add(key2);
@@ -10110,7 +10171,8 @@ function renderHook(input, options = {}) {
     stamp.placed.add(key2);
     writePlaced(stamp.file, stamp.placed);
   }
-  const body = options.headings ? `${matches.map((m) => `${m.onDemandFile} > ${m.path.join(" > ")} (${m.tokens} tokens)`).join("\n")}
+  const body = pointerOnly ? `${path11.join(target.dir, top.file)} > ${top.path.join(" > ")} (${top.tokens} tokens)
+Read the file above only if the answer is not in AlwaysOnMemory.` : options.headings ? `${matches.map((m) => `${m.onDemandFile} > ${m.path.join(" > ")} (${m.tokens} tokens)`).join("\n")}
 Read the file above only if the answer is not in AlwaysOnMemory.` : matches.map(
     (m) => `## ${m.onDemandFile} > ${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine}, ${m.tokens} tokens, score ${m.score})
 
@@ -10474,25 +10536,30 @@ function buildPreview(target, options = {}) {
     failOn: options.failOn,
     ...options.policy ? { policy: options.policy } : {}
   };
-  const audit = auditWorkspace(workspace, asked);
-  const config = resolveConfig({ ...asked, budget: audit.budget });
+  const measured = auditWorkspace(workspace, asked);
+  const config = resolveConfig({ ...asked, budget: measured.budget });
+  const over = options.budget !== void 0 && options.budgetFromPolicy !== true ? measured.findings.find((f) => f.rule === "MM001") : void 0;
+  const audit = over ? { ...measured, findings: measured.findings.filter((f) => f !== over) } : measured;
+  const budgetHeadline = over ? `always-loaded ${formatTokens(measured.alwaysLoadedTokens)} tokens, ${formatTokens(measured.alwaysLoadedTokens - measured.budget)} over the ${formatTokens(measured.budget)} you asked for` + (plan ? `; the plan below brings it to ${formatTokens(plan.after)}` : "") : void 0;
+  const extra = budgetHeadline ? { budgetHeadline } : {};
   if (workspace.shape === "compiled" && !workspace.manifestLost && !workspace.otherBranchBackups) {
     const drifted = audit.findings.some((f) => f.rule === "MM010");
     if (!drifted && options.force !== true) {
-      return { kind: "nothing", workspace, audit, config, note: "nothing to apply: no drift since the last apply" };
+      return { kind: "nothing", workspace, audit, config, note: "nothing to apply: no drift since the last apply", ...extra };
     }
   }
-  if (!plan) return { kind: "unavailable", workspace, audit, config, note: unavailable ?? "no plan" };
+  if (!plan) return { kind: "unavailable", workspace, audit, config, note: unavailable ?? "no plan", ...extra };
   if (workspace.shape === "memory-dir" && !workspace.reported) {
     return {
       kind: "unavailable",
       workspace,
       audit,
       config,
+      ...extra,
       note: "apply would refuse: nothing reported the files Claude Code loads, so an import of this folder's files from outside it could break. Report them first: in Claude Code the agent passes loaded to init; in a terminal, init with --from-log or --loaded <path> for each file. If nothing outside this folder loads it, init and apply with --only-this-folder."
     };
   }
-  return { kind: "plan", workspace, audit, config, plan };
+  return { kind: "plan", workspace, audit, config, plan, ...extra };
 }
 function renderHosts(ws, mcp) {
   const lines = [""];
@@ -10555,12 +10622,15 @@ function renderPreviewText(preview, options) {
 
 `;
   const hosts = renderHosts(preview.workspace, options.mcp === true);
-  return collapse2 ? [plan, audit, hosts].join("") : [audit, hosts, plan].join("");
+  const headline = preview.budgetHeadline ? `
+  ${preview.budgetHeadline}
+` : "";
+  return collapse2 ? [headline, plan, audit, hosts].join("") : [headline, audit, hosts, plan].join("");
 }
 function renderPreviewJson(preview, target, flags) {
   const doctor2 = JSON.parse(renderJson(preview.audit, preview.config));
   const plan = preview.kind === "plan" ? folderPlanSummary(preview.plan, target, flags) : { note: preview.note };
-  return JSON.stringify({ doctor: doctor2, plan }, null, 2);
+  return JSON.stringify({ doctor: doctor2, plan, ...preview.budgetHeadline ? { budgetHeadline: preview.budgetHeadline } : {} }, null, 2);
 }
 
 // src/runtime/loadLog.ts
@@ -10850,7 +10920,7 @@ function renderClaudeMap(map, options = {}) {
 }
 
 // src/surface/version.ts
-var VERSION = "1.3.6";
+var VERSION = "1.3.7";
 
 export {
   SEVERITY_ORDER,
@@ -10923,6 +10993,7 @@ export {
   readOldManifestVersion,
   discoveryRecordPath,
   saveDiscovery,
+  foreignMemoryFolderNote,
   compiledFolders,
   readDiscovery,
   recordedSet,
