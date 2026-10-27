@@ -16,9 +16,12 @@ import {
   applyCommand,
   applyFolderPlan,
   buildClaudeMap,
+  buildCodexMap,
   buildPreview,
   claudeMapJson,
+  codexMapJson,
   containedIn,
+  currentHost,
   detectPhase,
   discover,
   doctor,
@@ -57,6 +60,7 @@ import {
   recordedSet,
   renamedNote,
   renderClaudeMap,
+  renderCodexMap,
   renderFolderPlan,
   renderHuman,
   renderJson,
@@ -68,12 +72,13 @@ import {
   resolveReported,
   runFromNote,
   saveDiscovery,
+  setHost,
   shellSafe,
   summarizeOperations,
   undoCommand,
   undoNoBackupMessage,
   undoRefusal
-} from "./chunk-CCF76DIW.mjs";
+} from "./chunk-VVAEI2L4.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -11560,8 +11565,8 @@ var BASIC_PROMPTS = ["init", "doctor", "apply", "undo"];
 var PROMPT_TEXT = {
   init: {
     title: "Start: record and preview",
-    description: "Call init: record where Claude Code loads memory from, then the map, the audit and the plan.",
-    text: "Call the minnimemory init tool now{target}, with loaded: every memory file Claude Code loaded into this context (the auto-memory folder and the files imported from it). Show me the map, the findings and the plan it returns. Do not call apply."
+    description: "Call init: record where your host loads memory from, then the map, the audit and the plan.",
+    text: "Call the minnimemory init tool now{target}, with loaded: every memory file your host loaded into this context (the auto-memory folder and the files imported from it). Show me the map, the findings and the plan it returns. Do not call apply."
   },
   doctor: {
     title: "Check: audit and drift",
@@ -11599,6 +11604,7 @@ function registerBasicPrompts(server) {
   }
 }
 function createMcpServer(root, options = {}) {
+  if (options.host) setHost(options.host);
   const profile = options.profile === "full" ? "full" : "basic";
   const allowWrite = options.allowWrite === true;
   const instructions = profile === "full" ? fullInstructions(allowWrite) : BASIC_INSTRUCTIONS;
@@ -11748,26 +11754,29 @@ function previewHandler(root, options, label, withMap) {
     loaded
   }) => {
     try {
+      const hostName = currentHost();
       const memoryDir = memoryDirFor(root, loaded);
       const abs = resolveScanTarget(root, target, label, memoryDir);
       if (!withMap && !readDiscovery(root) && detectPhase(abs) !== "compiled" && readFolderManifest(abs) === void 0 && readRepoRecord(abs) === void 0) {
         throw new McpTargetError(`run init first: doctor checks memory that init has already looked at, and nothing is recorded for this project or compiled at ${abs.split(path.sep).join("/")}. Call init, with loaded set for the dev's Claude Code memory.`);
       }
       const built = buildPreview(abs, {
-        discover: { cwd: root, reported: reportFor(root, loaded, withMap ? void 0 : abs) },
+        discover: { cwd: root, host: hostName, reported: reportFor(root, loaded, withMap ? void 0 : abs) },
         // Raw, possibly undefined: a folder workspace computes its own default budget
         // (DESIGN.md 6.10, decision 8); buildPreview still gives the audit its usual 2000.
         budget,
         force: force === true
       });
       const preview = { ...built, audit: withMissingOriginal(built.audit) };
-      const map = !withMap ? void 0 : preview.workspace.shape === "memory-dir" ? memoryFolderMap(preview.workspace) : buildClaudeMap(fs.existsSync(abs) && fs.statSync(abs).isFile() ? path.dirname(abs) : abs, { machine: false, projectRoot: root });
-      const mapText = map ? renderClaudeMap(map, { limit: MCP_MAP_FILES_PER_GROUP }) : "";
+      const mapDir = fs.existsSync(abs) && fs.statSync(abs).isFile() ? path.dirname(abs) : abs;
+      const codexMap = withMap && hostName === "codex" && preview.workspace.shape !== "memory-dir" ? buildCodexMap(root, { projectRoot: mapDir }) : void 0;
+      const map = !withMap || codexMap ? void 0 : preview.workspace.shape === "memory-dir" ? memoryFolderMap(preview.workspace) : buildClaudeMap(mapDir, { machine: false, projectRoot: root });
+      const mapText = codexMap ? renderCodexMap(codexMap, { limit: MCP_MAP_FILES_PER_GROUP }) : map ? renderClaudeMap(map, { limit: MCP_MAP_FILES_PER_GROUP }) : "";
       const planTarget = preview.workspace.folderRoot ? agentTarget(root, preview.workspace.folderRoot) : void 0;
       const text = format === "json" ? compactJson(renderPreviewJson(preview, planTarget)) : renderPreviewText(preview, { color: false, ci: false, applyCommand: "apply()", diff: diff ?? "summary", target: planTarget, displayLimit: MCP_FINDINGS_PER_RULE, mcp: true });
-      if (format === "json" && map) {
+      if (format === "json" && (map || codexMap)) {
         const json = JSON.parse(text);
-        const withMapJson = { map: claudeMapJson(map, { limit: MCP_MAP_FILES_PER_GROUP }), ...json };
+        const withMapJson = { map: codexMap ? codexMapJson(codexMap, { limit: MCP_MAP_FILES_PER_GROUP }) : claudeMapJson(map, { limit: MCP_MAP_FILES_PER_GROUP }), ...json };
         return { content: [{ type: "text", text: asData(JSON.stringify(withMapJson)) }] };
       }
       let savedNote = "";
@@ -11865,7 +11874,7 @@ function registerApplyTool(server, root, options) {
     async ({ target, budget, force, content, format }) => {
       try {
         const abs = resolveScanTarget(root, target, "apply target", recordedMemoryDir(root));
-        const workspace = discover(abs, { cwd: root, reported: reportFor(root, void 0, abs) });
+        const workspace = discover(abs, { cwd: root, host: currentHost(), reported: reportFor(root, void 0, abs) });
         if (workspace.shape === "memory-dir" && !workspace.reported) {
           throw new McpTargetError(
             `apply refused: no file is recorded as loaded by Claude Code (init saw none), so an import of this folder's files from outside it could break. Call init with loaded set: your auto memory folder and every file Claude Code shows as loaded (each "Contents of <path>"), then apply. If nothing outside this folder loads it, run in a terminal, through the dev's own approval: \`${applyCommand(void 0, abs, { flags: ["--only-this-folder"] })}\`.`
@@ -11873,7 +11882,7 @@ function registerApplyTool(server, root, options) {
         }
         let result;
         try {
-          const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget });
+          const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget, sortAnyway: force === true });
           if (plan.verdict === "nothing") {
             result = {
               instructions: plan.hostNote ? plan.hostNote.join(" ") : plan.existing ? "nothing to apply: every always-loaded file is as the last apply left it" : "nothing to compile: no always-loaded file here has a section to route out"
@@ -11893,7 +11902,7 @@ function registerApplyTool(server, root, options) {
             };
           } else {
             const outside = !containedIn(root, plan.root);
-            const sortNote = plan.verdict === "sort" ? ` This plan only sorts: no always-loaded file is recompiled and the prefix goes from ${plan.before} to ${plan.after} tokens; it is an organising step, not a saving.` : "";
+            const sortNote = plan.verdict === "sort" ? ` This plan only sorts: no always-loaded file is recompiled and the prefix goes from ${plan.before} to ${plan.after} tokens; it is an organising step, not a saving.` : plan.verdict === "fix" ? ` This plan moves no file: it only fixes the index's own lines and the prefix goes from ${plan.before} to ${plan.after} tokens.` + (plan.sortCost !== void 0 ? ` The full sort would add ${plan.sortCost} tokens per turn; only with the dev's yes, call apply with force: true for it.` : "") : "";
             const notes = `${sortNote}${plan.renamed ? ` ${renamedNote(plan.renamed)}.` : ""}`.trim();
             result = {
               lead: `${APPLY_INSTRUCTIONS} Root: ${plan.root}` + (outside ? " (outside the server root, so every path below is absolute)." : ".") + runFromLead(agentTarget(root, plan.root), plan.root),
@@ -11943,7 +11952,7 @@ function registerUndoTool(server, root, options) {
         const abs = resolveScanTarget(root, target, "undo target", recordedMemoryDir(root));
         let folderRoot;
         try {
-          const ws = discover(abs, { cwd: root });
+          const ws = discover(abs, { cwd: root, host: currentHost() });
           folderRoot = ws.folderRoot;
         } catch (err) {
           if (!(err instanceof DiscoveryError)) throw err;

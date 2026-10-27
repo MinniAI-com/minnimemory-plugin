@@ -1,6 +1,6 @@
 # MinniMemoryMCP for Claude Code
 
-MinniMemoryMCP 1.3.7 as a Claude Code plugin. It audits the memory files Claude Code loads
+MinniMemoryMCP 1.4.0 as a Claude Code plugin. It audits the memory files Claude Code loads
 (`CLAUDE.md`, `AGENTS.md`, your memory folder) and compiles them into a small AlwaysOnMemory
 body that loads every turn, plus OnDemandMemory files that load only when a task needs them.
 Every change is lossless and undoable: the originals are backed up first and `undo` puts them

@@ -18,11 +18,15 @@ import {
   backupBeforeForcedUndo,
   bounds,
   buildClaudeMap,
+  buildCodexMap,
   buildPreview,
   buildSearchIndex,
   claudeConfigDir,
   claudeMapJson,
+  codexMapJson,
   compiledFolders,
+  currentHost,
+  detectHost,
   detectPhase,
   directCliPath,
   discover,
@@ -30,7 +34,10 @@ import {
   exitCodeFor,
   foreignMemoryFolderNote,
   formatTokens,
+  hostConfigDir,
+  hostLabel,
   initCommand,
+  isHostName,
   isProfileName,
   keptBackupsNote,
   keptOnlyMessage,
@@ -57,6 +64,7 @@ import {
   recordLoad,
   recordedSet,
   renderClaudeMap,
+  renderCodexMap,
   renderDriftNotice,
   renderFolderPlan,
   renderHook,
@@ -67,13 +75,14 @@ import {
   resolveReported,
   saveDiscovery,
   selectUnits,
+  setHost,
   shellSafe,
   shellWord,
   undoCommand,
   undoNoBackupMessage,
   undoRefusal,
   unitsOf
-} from "./chunks/chunk-CCF76DIW.mjs";
+} from "./chunks/chunk-VVAEI2L4.mjs";
 import "./chunks/chunk-ZVIOPPZP.mjs";
 
 // src/surface/cli.ts
@@ -315,6 +324,10 @@ function safeDirectCliPath(cliPath) {
   const direct = directCliPath(cliPath);
   return direct && shellSafe(direct) ? direct : void 0;
 }
+function hookCapable(host) {
+  return host === void 0 || host === "codex";
+}
+var HOOK_HOST_FLAG = " --host codex";
 function quoteArg(arg) {
   return shellWord(arg) ?? `"${arg.replace(/"/g, '\\"')}"`;
 }
@@ -331,18 +344,39 @@ function npxCacheNote(plan) {
 function hostConfigPath(host) {
   if (host === "cursor") return "~/.cursor/mcp.json";
   if (host === "windsurf") return "~/.codeium/windsurf/mcp_config.json";
+  if (host === "codex") return "~/.codex/config.toml";
   return void 0;
 }
-function planInstall(options, _env) {
+function codexConfigDirOf(env) {
+  return env.codexConfigDir ?? path.join(env.home, ".codex");
+}
+function codexRegistered(env) {
+  try {
+    return /^\s*\[mcp_servers\.minnimemory\]\s*$/m.test(fs2.readFileSync(path.join(codexConfigDirOf(env), "config.toml"), "utf8"));
+  } catch {
+    return false;
+  }
+}
+function planInstall(options, env) {
   const servedFlags = [];
   if (options.write) servedFlags.push("--profile", "full", "--allow-write");
+  const codex = options.host === "codex";
+  if (codex) servedFlags.push("--host", "codex");
   const servedDirect = safeDirectCliPath(options.cliPath);
   const servedArgv = servedDirect ? ["node", servedDirect, "mcp", ...servedFlags] : ["npx", "-y", "minnimemory", "mcp", ...servedFlags];
-  const addArgv = ["claude", "mcp", "add", "minnimemory", "-s", options.scope, "--", ...servedArgv];
-  const removeArgv = ["claude", "mcp", "remove", "minnimemory", "-s", options.scope];
-  const getArgv = ["claude", "mcp", "get", "minnimemory"];
-  const probeArgv = ["claude", "--version"];
+  const codexHome = codex && env.codexHome ? env.codexHome : void 0;
+  const envArgs = codexHome ? ["--env", `CODEX_HOME=${codexHome}`] : [];
+  const addArgv = codex ? ["codex", "mcp", "add", "minnimemory", ...envArgs, "--", ...servedArgv] : ["claude", "mcp", "add", "minnimemory", "-s", options.scope, "--", ...servedArgv];
+  const removeArgv = codex ? ["codex", "mcp", "remove", "minnimemory"] : ["claude", "mcp", "remove", "minnimemory", "-s", options.scope];
+  const getArgv = codex ? ["codex", "mcp", "get", "minnimemory"] : ["claude", "mcp", "get", "minnimemory"];
+  const probeArgv = codex ? ["codex", "--version"] : ["claude", "--version"];
   const manualLine = formatCommand(addArgv);
+  const tomlSnippet = codex ? [
+    "[mcp_servers.minnimemory]",
+    `command = ${JSON.stringify(servedArgv[0])}`,
+    `args = [${servedArgv.slice(1).map((a) => JSON.stringify(a)).join(", ")}]`,
+    ...codexHome ? [`env = { CODEX_HOME = ${JSON.stringify(codexHome)} }`] : []
+  ].join("\n") : void 0;
   const jsonSnippet = JSON.stringify(
     {
       mcpServers: {
@@ -365,7 +399,8 @@ function planInstall(options, _env) {
     getArgv,
     probeArgv,
     manualLine,
-    jsonSnippet
+    jsonSnippet,
+    ...tomlSnippet ? { tomlSnippet } : {}
   };
   if (options.host && options.host !== "json") {
     const configPath = hostConfigPath(options.host);
@@ -377,17 +412,22 @@ function isMissingBinary(outcome) {
   return outcome.error !== void 0 && outcome.error.code === "ENOENT";
 }
 var DRIFT_HOOK_COMMAND = "npx -y minnimemory drift";
-function driftHookCommand(cliPath) {
+function driftHookCommand(cliPath, host) {
   const direct = safeDirectCliPath(cliPath);
-  return direct ? `node "${direct}" drift` : DRIFT_HOOK_COMMAND;
+  return (direct ? `node "${direct}" drift` : DRIFT_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
 }
 var MEMORY_HOOK_COMMAND = "npx -y minnimemory hook";
-function memoryHookCommand(cliPath) {
+function memoryHookCommand(cliPath, host) {
   const direct = safeDirectCliPath(cliPath);
-  return direct ? `node "${direct}" hook` : MEMORY_HOOK_COMMAND;
+  return (direct ? `node "${direct}" hook` : MEMORY_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
+}
+function withoutHostFlag(command) {
+  return command.endsWith(HOOK_HOST_FLAG) ? command.slice(0, -HOOK_HOST_FLAG.length) : command;
 }
 function isMemoryHookCommand(command) {
-  return typeof command === "string" && (command === MEMORY_HOOK_COMMAND || isOwnNodeForm(command, "hook"));
+  if (typeof command !== "string") return false;
+  const c = withoutHostFlag(command);
+  return c === MEMORY_HOOK_COMMAND || isOwnNodeForm(c, "hook");
 }
 function registrationMatches(getOutput, plan) {
   const norm = (s) => s.replace(/\\/g, "/").toLowerCase();
@@ -423,7 +463,9 @@ function ownPackageAt(file) {
   return false;
 }
 function isDriftHookCommand(command) {
-  return typeof command === "string" && (command === DRIFT_HOOK_COMMAND || isOwnNodeForm(command, "drift"));
+  if (typeof command !== "string") return false;
+  const c = withoutHostFlag(command);
+  return c === DRIFT_HOOK_COMMAND || isOwnNodeForm(c, "drift");
 }
 var LOADED_HOOK_COMMAND = "npx -y minnimemory loaded";
 function loadedHookCommand(cliPath) {
@@ -433,22 +475,28 @@ function loadedHookCommand(cliPath) {
 function isLoadedHookCommand(command) {
   return typeof command === "string" && (command === LOADED_HOOK_COMMAND || isOwnNodeForm(command, "loaded"));
 }
-function ownHooks(cliPath) {
-  const drift = driftHookCommand(cliPath);
-  const memory = memoryHookCommand(cliPath);
+function ownHooks(cliPath, host) {
+  const drift = driftHookCommand(cliPath, host);
+  const memory = memoryHookCommand(cliPath, host);
   const loaded = loadedHookCommand(cliPath);
-  return [
+  const prompt = [
     { event: "UserPromptSubmit", command: drift, fallback: DRIFT_HOOK_COMMAND, isOurs: (c) => c === drift || isDriftHookCommand(c) },
-    { event: "UserPromptSubmit", command: memory, fallback: MEMORY_HOOK_COMMAND, isOurs: (c) => c === memory || isMemoryHookCommand(c) },
-    { event: "InstructionsLoaded", command: loaded, fallback: LOADED_HOOK_COMMAND, isOurs: (c) => c === loaded || isLoadedHookCommand(c) }
+    { event: "UserPromptSubmit", command: memory, fallback: MEMORY_HOOK_COMMAND, isOurs: (c) => c === memory || isMemoryHookCommand(c) }
   ];
+  if (host === "codex") return prompt;
+  return [...prompt, { event: "InstructionsLoaded", command: loaded, fallback: LOADED_HOOK_COMMAND, isOurs: (c) => c === loaded || isLoadedHookCommand(c) }];
 }
-function hookSettingsPath(scope, env) {
+function hookSettingsPath(scope, env, host) {
   const cwd = env.cwd ?? process.cwd();
+  if (host === "codex") return scope === "user" ? path.join(codexConfigDirOf(env), "hooks.json") : path.join(cwd, ".codex", "hooks.json");
   if (scope === "user") return path.join(env.configDir ?? path.join(env.home, ".claude"), "settings.json");
   if (scope === "project") return path.join(cwd, ".claude", "settings.json");
   return path.join(cwd, ".claude", "settings.local.json");
 }
+function restartLine(host) {
+  return host === "codex" ? "Restart Codex." : "Restart Claude Code.";
+}
+var CODEX_TRUST_LINE = "then run /hooks inside Codex once to trust the two minnimemory hooks (Codex skips an untrusted hook)";
 function ourCommandsIn(entries, isOurs) {
   const found = [];
   for (const entry of entries) {
@@ -489,8 +537,11 @@ function hooksOf(settings) {
   return h && typeof h === "object" && !Array.isArray(h) ? h : void 0;
 }
 function installHook(options, env) {
-  const settingsPath = hookSettingsPath(options.scope, env);
-  const hooks = ownHooks(options.cliPath);
+  if (options.host === "codex" && options.scope === "local") {
+    return { exitCode: 2, output: "install --hook: Codex has no local scope; use --scope user or --scope project.", path: "" };
+  }
+  const settingsPath = hookSettingsPath(options.scope, env, options.host);
+  const hooks = ownHooks(options.cliPath, options.host);
   if (options.dryRun) {
     return {
       exitCode: 0,
@@ -522,11 +573,11 @@ function installHook(options, env) {
           }
         }
       }
-      lines.push(`hook: updated \`${present[0]}\` -> \`${h.command}\` in ${settingsPath} (${h.event}). Restart Claude Code.`);
+      lines.push(`hook: updated \`${present[0]}\` -> \`${h.command}\` in ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
     } else {
       const entry = { hooks: [{ type: "command", command: h.command }] };
       entries.push(entry);
-      lines.push(`hook: added \`${h.command}\` to ${settingsPath} (${h.event}). Restart Claude Code.`);
+      lines.push(`hook: added \`${h.command}\` to ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
     }
     all[h.event] = entries;
     changed = true;
@@ -539,8 +590,8 @@ function installHook(options, env) {
   return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
 }
 function removeHook(options, env) {
-  const settingsPath = hookSettingsPath(options.scope, env);
-  const hooks = ownHooks(options.cliPath);
+  const settingsPath = hookSettingsPath(options.scope, env, options.host);
+  const hooks = ownHooks(options.cliPath, options.host);
   if (options.dryRun) {
     return {
       exitCode: 0,
@@ -592,7 +643,7 @@ function runUninstall(options, env, runner) {
   const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
   let exitCode = 0;
   if (isMissingBinary(probe)) {
-    lines.push("the claude CLI is not on PATH; skipping the MCP registration removal.");
+    lines.push(`the ${options.host === "codex" ? "codex" : "claude"} CLI is not on PATH; skipping the MCP registration removal.`);
   } else {
     const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
     lines.push(`ran: ${formatCommand(plan.removeArgv)}`);
@@ -612,9 +663,12 @@ ${removed.stderr}`)) {
   return { exitCode, output: `${lines.join("\n")}
 ` };
 }
-function nextStep(cliPath) {
+function nextStep(cliPath, host) {
   const direct = safeDirectCliPath(cliPath);
   const init = direct ? `node "${direct}" init` : "npx -y minnimemory init";
+  if (host === "codex") {
+    return `next: restart Codex, ${CODEX_TRUST_LINE}, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --host codex\` from your project (Codex's load set needs no --from-log).`;
+  }
   return `next: restart Claude Code, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --from-log\` from your project.`;
 }
 function withHook(options, env, lines, exitCode) {
@@ -623,16 +677,68 @@ function withHook(options, env, lines, exitCode) {
     lines.push(hookResult.output);
     if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
   }
-  if (exitCode === 0) lines.push(nextStep(options.cliPath));
+  if (exitCode === 0) lines.push(nextStep(options.cliPath, options.host));
   return { exitCode, output: `${lines.join("\n")}
 ` };
+}
+function runCodexInstall(options, env, runner, plan) {
+  const lines = [];
+  if (options.dryRun) {
+    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
+    const note2 = npxCacheNote(plan);
+    if (note2) lines.push(note2);
+    return withHook(options, env, lines, 0);
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  if (isMissingBinary(probe)) {
+    lines.push(
+      "the codex CLI is not on PATH. Register minnimemory manually:",
+      "",
+      `  ${plan.manualLine}`,
+      "",
+      `or add this to ${plan.hostConfigPath ?? "~/.codex/config.toml"}:`,
+      "",
+      plan.tomlSnippet ?? ""
+    );
+    return { exitCode: 2, output: `${lines.join("\n")}
+` };
+  }
+  const registered = codexRegistered(env);
+  if (registered && !options.force) {
+    lines.push(
+      "minnimemory is already registered with Codex.",
+      `to change it: ${formatCommand(["npx", "-y", "minnimemory", "install", "--host", "codex", "--force", ...options.write ? ["--write"] : []])}`
+    );
+    return withHook(options, env, lines, 0);
+  }
+  if (registered) {
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    if (removed.code !== 0) {
+      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
+      return { exitCode: 1, output: `${lines.join("\n")}
+` };
+    }
+  }
+  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
+  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
+  if (added.code !== 0) {
+    lines.push(added.stderr.trim());
+    return { exitCode: 1, output: `${lines.join("\n")}
+` };
+  }
+  if (added.stdout.trim()) lines.push(added.stdout.trim());
+  const note = npxCacheNote(plan);
+  if (note) lines.push(note);
+  return withHook(options, env, lines, 0);
 }
 function runInstall(options, env, runner) {
   const plan = planInstall(options, env);
   const lines = [];
-  if (options.hook && options.host) {
-    return { exitCode: 2, output: "--hook only applies to Claude Code\n" };
+  if (options.hook && !hookCapable(options.host)) {
+    return { exitCode: 2, output: "--hook only applies to Claude Code and Codex\n" };
   }
+  if (options.host === "codex") return runCodexInstall(options, env, runner, plan);
   if (options.host) {
     lines.push(plan.jsonSnippet);
     if (plan.hostConfigPath) {
@@ -752,7 +858,11 @@ install options
   --force                 remove an existing registration first, then re-add
   --no-hook               skip the three hooks (memory, drift notice, load log); on by default
   --remove                remove the MCP registration and the hooks install added (= uninstall)
-  --host <name>           cursor, windsurf or json: print the mcpServers snippet (and the
+  --host <name>           codex: register with Codex (codex mcp add) and write the two
+                           UserPromptSubmit hooks to ~/.codex/hooks.json (--scope user) or
+                           <repo>/.codex/hooks.json (--scope project; no local scope), then
+                           run /hooks inside Codex once to trust them
+                          cursor, windsurf or json: print the mcpServers snippet (and the
                            config file for cursor/windsurf) to paste, instead of registering
                            with Claude Code; no hook
   without the claude CLI on PATH: print the manual claude mcp add line and the JSON snippet,
@@ -786,6 +896,14 @@ init and doctor options
   --memory-dir <path>     the auto memory folder Claude Code names; also the folder to use
   --from-log              take the loaded files from Claude Code's own load log for this folder
   --only-this-folder      apply to a memory folder with nothing reported, when nothing outside loads it
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
   --diff <mode>           summary: the plan and the operation list, no file diffs; full: every
                            diff too                                        (default full)
   --budget <n>            always-loaded token budget AlwaysOnMemory must fit    (default: 60% of the file, at least 2000)
@@ -808,6 +926,14 @@ apply options
   --memory-dir <path>     the auto memory folder Claude Code names; also the folder to use
   --from-log              take the loaded files from Claude Code's own load log for this folder
   --only-this-folder      apply to a memory folder with nothing reported, when nothing outside loads it
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
   --budget <n>            always-loaded token budget AlwaysOnMemory must fit    (default: 60% of the file, at least 2000)
   --profile <name>        how much token-discipline guidance to embed      (default auto)
                             auto     same as none today, for every source
@@ -861,6 +987,14 @@ doctor options
   --memory-dir <path>     the auto memory folder Claude Code names; also the folder to use
   --from-log              take the loaded files from Claude Code's own load log for this folder
   --only-this-folder      apply to a memory folder with nothing reported, when nothing outside loads it
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
+  --host <name>           claude or codex: whose load rules apply (default: detected; codex when
+                           CODEX_HOME is set or a Codex config.toml registers minnimemory). Codex
+                           loads one AGENTS.md chain under project_doc_max_bytes, so --loaded and
+                           --from-log are not needed there
   --only <ids>            run only these rules, comma separated
   --ignore <ids>          skip these rules, comma separated
   --rules                 list the rule set and exit
@@ -931,8 +1065,8 @@ function parseScope(value) {
 }
 function parseHost(value) {
   if (value === void 0) return void 0;
-  if (value === "cursor" || value === "windsurf" || value === "json") return value;
-  throw new Error(`--host must be one of cursor, windsurf, json (got "${value}")`);
+  if (value === "cursor" || value === "windsurf" || value === "json" || value === "codex") return value;
+  throw new Error(`--host must be one of codex, cursor, windsurf, json (got "${value}")`);
 }
 function parseBudget(value) {
   if (value === void 0) return void 0;
@@ -972,11 +1106,12 @@ function runMcpCommand(target, values) {
   void (async () => {
     const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
       import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-RKKRYRO4.mjs")
+      import("./chunks/mcpServer-G55267GJ.mjs")
     ]);
     const server = createMcpServer(root, {
       profile: profileName,
-      allowWrite: values["allow-write"] === true
+      allowWrite: values["allow-write"] === true,
+      host: currentHost()
     });
     await server.connect(new StdioServerTransport());
   })().catch((err) => {
@@ -1150,6 +1285,20 @@ ${USAGE}`);
     if (named === void 0) return 2;
   }
   const target = named ?? ".";
+  if (command !== "install" && command !== "uninstall") {
+    if (values.host !== void 0) {
+      if (!isHostName(values.host)) {
+        process.stderr.write(`
+  error: --host must be claude or codex for ${command} (got "${values.host}")
+
+`);
+        return 2;
+      }
+      setHost(values.host);
+    } else if (["init", "doctor", "apply", "undo", "mcp"].includes(command)) {
+      setHost(detectHost({ env: process.env, home: os.homedir(), cwd: process.cwd() }));
+    } else setHost("claude");
+  }
   if (values.policy !== void 0 && command !== "doctor") {
     process.stderr.write(`
   error: --policy is a doctor option: \`minnimemory doctor <folder> --policy <file>\`
@@ -1199,11 +1348,10 @@ ${USAGE}`);
         dryRun: values["dry-run"] === true,
         force: values.force === true,
         host: parseHost(values.host),
-        // The drift hook is on by default (DESIGN.md 6.12, decision 3); --no-hook opts out.
-        // Never on for --host: the hook is a Claude Code settings entry, not an MCP host concept
-        // (installHook/runInstall already refuse the combination, --host here just avoids
-        // tripping that refusal by default on every non-Claude-Code install).
-        hook: values.host === void 0 && values["no-hook"] !== true,
+        // The hooks are on by default (DESIGN.md 6.12, decision 3); --no-hook opts out. Only
+        // Claude Code (no --host) and Codex have hooks the tool knows; the JSON-only hosts
+        // (cursor, windsurf, json) get no hook, so the default avoids runInstall's refusal there.
+        hook: (values.host === void 0 || values.host === "codex") && values["no-hook"] !== true,
         // The hook calls this very CLI by path (driftHookCommand); under npx that is the cached
         // package, under a checkout it is dist/surface/cli.js.
         cliPath: process.argv[1] ? realOrResolved(process.argv[1]) : void 0
@@ -1215,7 +1363,7 @@ ${USAGE}`);
 `);
       return 2;
     }
-    const env = { home: os.homedir(), platform: process.platform, cwd: process.cwd(), configDir: claudeConfigDir() };
+    const env = { home: os.homedir(), platform: process.platform, cwd: process.cwd(), configDir: claudeConfigDir(), codexConfigDir: hostConfigDir("codex"), ...process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {} };
     const removing = command === "uninstall" || values.remove === true;
     const result = removing ? runUninstall(options, env, processRunner()) : runInstall(options, env, processRunner());
     const stream = result.exitCode === 0 ? process.stdout : process.stderr;
@@ -1256,7 +1404,7 @@ ${result.output}
     const write = command === "apply";
     const explicitProfile = profileName === "auto" ? void 0 : profileName;
     const episodicJson = values["episodic-json"] === true;
-    const cliFlags = [...explicitProfile ? [`--profile ${explicitProfile}`] : [], ...episodicJson ? ["--episodic-json"] : [], ...values["only-this-folder"] === true ? ["--only-this-folder"] : []];
+    const cliFlags = [...currentHost() === "codex" ? ["--host codex"] : [], ...explicitProfile ? [`--profile ${explicitProfile}`] : [], ...episodicJson ? ["--episodic-json"] : [], ...values["only-this-folder"] === true ? ["--only-this-folder"] : []];
     const previewOptions2 = {
       budget,
       force: values.force === true,
@@ -1274,23 +1422,26 @@ ${result.output}
         } catch {
           folderWs = void 0;
         }
-        const map = folderWs ? memoryFolderMap(folderWs) : buildClaudeMap(mapDir, { machine: false, projectRoot: mapDir });
+        const codexMap = !folderWs && currentHost() === "codex" ? buildCodexMap(process.cwd(), { projectRoot: mapDir }) : void 0;
+        const map = codexMap ? void 0 : folderWs ? memoryFolderMap(folderWs) : buildClaudeMap(mapDir, { machine: false, projectRoot: mapDir });
+        const mapText = codexMap ? renderCodexMap(codexMap) : renderClaudeMap(map);
+        const mapJson = () => codexMap ? codexMapJson(codexMap) : claudeMapJson(map);
         if (values.map === true) {
-          process.stdout.write(values.json ? `${JSON.stringify(map, null, 2)}
-` : renderClaudeMap(map));
+          process.stdout.write(values.json ? `${JSON.stringify(codexMap ?? map, null, 2)}
+` : mapText);
           return 0;
         }
-        if (!values.json) process.stdout.write(renderClaudeMap(map));
+        if (!values.json) process.stdout.write(mapText);
         const preview = buildPreview(target, previewOptions2);
         if (values.json) {
           const json = JSON.parse(renderPreviewJson(preview, named, cliFlags));
-          process.stdout.write(`${JSON.stringify({ map: claudeMapJson(map), ...json }, null, 2)}
+          process.stdout.write(`${JSON.stringify({ map: mapJson(), ...json }, null, 2)}
 `);
         } else process.stdout.write(renderPreviewText(preview, { color: false, ci: values.ci === true, target: named, flags: cliFlags, diff: diffMode }));
         const folder = preview.workspace.folderRoot ?? path2.resolve(target);
         const asMemory = preview.workspace.claudeMemoryFolder ? folder : void 0;
         const where = saveDiscovery(process.cwd(), freshReport ? { ...freshReport, ...freshReport.memoryDir ?? asMemory ? { memoryDir: freshReport.memoryDir ?? asMemory } : {} } : void 0, folder);
-        if (freshReport && !values.json) process.stdout.write(where ? `  saved what Claude Code loads here for apply, doctor and undo: ${where}
+        if (freshReport && !values.json) process.stdout.write(where ? `  saved what ${hostLabel()} loads here for apply, doctor and undo: ${where}
 
 ` : "  could not save the locations; pass them again to apply\n\n");
         const foreign = foreignMemoryFolderNote(process.cwd(), folder);
@@ -1309,7 +1460,7 @@ ${result.output}
         );
         return 2;
       }
-      const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget, profileName: explicitProfile, episodicJson });
+      const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget, profileName: explicitProfile, episodicJson, sortAnyway: values.force === true });
       if (values.plan !== void 0 && plan.plan !== values.plan) {
         process.stderr.write(
           `
@@ -1436,7 +1587,7 @@ ${result.output}
     void (async () => {
       const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
         import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-RKKRYRO4.mjs")
+        import("./chunks/mcpServer-G55267GJ.mjs")
       ]);
       process.stderr.write(`
   mcp: ${DISABLED_MESSAGE}
