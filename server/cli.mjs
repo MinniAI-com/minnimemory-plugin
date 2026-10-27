@@ -24,6 +24,8 @@ import {
   claudeConfigDir,
   claudeMapJson,
   codexMapJson,
+  codexUserTarget,
+  codexUserTargetNote,
   compiledFolders,
   currentHost,
   detectHost,
@@ -36,6 +38,7 @@ import {
   formatTokens,
   hostConfigDir,
   hostLabel,
+  inCodexMemories,
   initCommand,
   isHostName,
   isProfileName,
@@ -82,7 +85,7 @@ import {
   undoNoBackupMessage,
   undoRefusal,
   unitsOf
-} from "./chunks/chunk-VVAEI2L4.mjs";
+} from "./chunks/chunk-NMSVLGUS.mjs";
 import "./chunks/chunk-ZVIOPPZP.mjs";
 
 // src/surface/cli.ts
@@ -1106,7 +1109,7 @@ function runMcpCommand(target, values) {
   void (async () => {
     const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
       import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-G55267GJ.mjs")
+      import("./chunks/mcpServer-F62QRSMU.mjs")
     ]);
     const server = createMcpServer(root, {
       profile: profileName,
@@ -1284,7 +1287,7 @@ ${USAGE}`);
     named = askForFolder(command);
     if (named === void 0) return 2;
   }
-  const target = named ?? ".";
+  let target = named ?? ".";
   if (command !== "install" && command !== "uninstall") {
     if (values.host !== void 0) {
       if (!isHostName(values.host)) {
@@ -1327,6 +1330,15 @@ ${USAGE}`);
     for (const f of Object.keys(log.files)) if (/\.md$/i.test(f) && fs3.existsSync(f)) reportedFiles.push(path2.resolve(f));
   }
   const memoryDirFlag = typeof values["memory-dir"] === "string" ? resolveReported(values["memory-dir"]) : void 0;
+  if (memoryDirFlag && currentHost() === "codex" && inCodexMemories(hostConfigDir("codex"), memoryDirFlag)) {
+    process.stderr.write(
+      `
+  error: ${memoryDirFlag.split(path2.sep).join("/")} is Codex's own memories folder: Codex generates and rewrites it, so minnimemory lists it in the map and never compiles it. Run init on the project; Codex's AGENTS.md files are what it works on.
+
+`
+    );
+    return 2;
+  }
   const anyReport = reportedFiles.length > 0 || memoryDirFlag !== void 0;
   const freshReport = anyReport || values["only-this-folder"] === true ? { files: [...new Set(reportedFiles)], ...memoryDirFlag ? { memoryDir: memoryDirFlag } : {}, source: values["from-log"] === true && (values.loaded ?? []).length === 0 ? "log" : "terminal", ...values["only-this-folder"] === true ? { onlyThisFolder: true } : {} } : void 0;
   const fromRepo = freshReport || !["doctor", "apply"].includes(command) ? void 0 : repoRecordInUse(target);
@@ -1339,6 +1351,17 @@ ${USAGE}`);
     cwd: process.cwd(),
     ...freshReport ? { reported: freshReport } : recorded ? { reported: recorded } : {}
   };
+  let userTargetNote;
+  let mapFolder;
+  if (command === "init") {
+    const userTarget = codexUserTarget(target, { reported: freshReport });
+    if (userTarget) {
+      userTargetNote = codexUserTargetNote(target, userTarget);
+      mapFolder = path2.resolve(target);
+      target = userTarget.dir;
+      named = userTarget.dir;
+    }
+  }
   if (command === "install" || command === "uninstall") {
     let options;
     try {
@@ -1422,7 +1445,7 @@ ${result.output}
         } catch {
           folderWs = void 0;
         }
-        const codexMap = !folderWs && currentHost() === "codex" ? buildCodexMap(process.cwd(), { projectRoot: mapDir }) : void 0;
+        const codexMap = !folderWs && currentHost() === "codex" ? buildCodexMap(process.cwd(), { projectRoot: mapFolder ?? mapDir }) : void 0;
         const map = codexMap ? void 0 : folderWs ? memoryFolderMap(folderWs) : buildClaudeMap(mapDir, { machine: false, projectRoot: mapDir });
         const mapText = codexMap ? renderCodexMap(codexMap) : renderClaudeMap(map);
         const mapJson = () => codexMap ? codexMapJson(codexMap) : claudeMapJson(map);
@@ -1432,6 +1455,9 @@ ${result.output}
           return 0;
         }
         if (!values.json) process.stdout.write(mapText);
+        if (userTargetNote && !values.json) process.stdout.write(`  ${userTargetNote}
+
+`);
         const preview = buildPreview(target, previewOptions2);
         if (values.json) {
           const json = JSON.parse(renderPreviewJson(preview, named, cliFlags));
@@ -1587,7 +1613,7 @@ ${result.output}
     void (async () => {
       const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
         import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-G55267GJ.mjs")
+        import("./chunks/mcpServer-F62QRSMU.mjs")
       ]);
       process.stderr.write(`
   mcp: ${DISABLED_MESSAGE}

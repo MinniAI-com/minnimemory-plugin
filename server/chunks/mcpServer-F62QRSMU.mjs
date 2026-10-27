@@ -1,6 +1,7 @@
 /* MinniMemoryMCP (c) 2026 MinniAI. Licensed under the MinniMemoryMCP License, see LICENSE. */
 import { createRequire as __minniCreateRequire } from "node:module"; const require = __minniCreateRequire(import.meta.url);
 import {
+  CODEX_REPORT_RULE,
   COMPILED_DIR_NAME,
   DiscoveryError,
   FolderError,
@@ -19,7 +20,12 @@ import {
   buildCodexMap,
   buildPreview,
   claudeMapJson,
+  codexLoadedFiles,
   codexMapJson,
+  codexProjectRoot,
+  codexReportedFiles,
+  codexUserTarget,
+  codexUserTargetNote,
   containedIn,
   currentHost,
   detectPhase,
@@ -31,6 +37,8 @@ import {
   folderPlanMoves,
   folderPlanSummary,
   foreignMemoryFolderNote,
+  hostConfigDir,
+  inCodexMemories,
   initCommand,
   isEscapingRelative,
   keptBackupsNote,
@@ -78,7 +86,7 @@ import {
   undoCommand,
   undoNoBackupMessage,
   undoRefusal
-} from "./chunk-VVAEI2L4.mjs";
+} from "./chunk-NMSVLGUS.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -11483,22 +11491,26 @@ Claude Code's load log for this project lists ${files.length} file(s)${more > 0 
 ` + asData(shown.join("\n"));
 }
 function resolveScanTarget(root, target, label, memoryDir) {
+  const codexHome = currentHost() === "codex" ? path.resolve(hostConfigDir("codex")) : void 0;
   if (target === void 0) {
     if (memoryDir) return memoryDir;
-    if (!label.startsWith("init") && readDiscovery(root)) return root;
+    const rec = label.startsWith("init") ? void 0 : readDiscovery(root);
+    if (rec) return codexHome && rec.target && pathKey(rec.target) === pathKey(codexHome) ? codexHome : root;
+    if (codexHome) return root;
     throw new McpTargetError(
       `which folder? For the dev's Claude Code memory, call init with loaded set: your auto memory folder and every file Claude Code shows as loaded in your context ("Contents of <path>"). For the project itself, call ${label.split(" ")[0]} again with target ".", the server root, ${root.split(path.sep).join("/")}. minnimemory never guesses the folder.` + loadLogHint(root)
     );
   }
-  if (memoryDir) {
-    const expanded = target === "~" || /^~[\\/]/.test(target) ? path.join(os.homedir(), target.slice(1)) : target;
-    if (path.isAbsolute(expanded) && pathKey(path.resolve(expanded)) === pathKey(memoryDir)) return memoryDir;
-  }
+  const expanded = target === "~" || /^~[\\/]/.test(target) ? path.join(os.homedir(), target.slice(1)) : target;
+  if (memoryDir && path.isAbsolute(expanded) && pathKey(path.resolve(expanded)) === pathKey(memoryDir)) return memoryDir;
+  if (codexHome && path.isAbsolute(expanded) && pathKey(path.resolve(expanded)) === pathKey(codexHome)) return codexHome;
   return resolveTarget(root, target, label);
 }
 function memoryDirFor(root, loaded) {
   if (loaded?.memoryDir) {
-    return resolveReported(loaded.memoryDir);
+    const dir = resolveReported(loaded.memoryDir);
+    if (currentHost() === "codex" && inCodexMemories(hostConfigDir("codex"), dir)) return void 0;
+    return dir;
   }
   return recordedMemoryDir(root);
 }
@@ -11556,6 +11568,7 @@ var MCP_FINDINGS_PER_RULE = 4;
 var compactJson = (pretty) => JSON.stringify(JSON.parse(pretty));
 var MCP_MAP_FILES_PER_GROUP = 12;
 var BASIC_INSTRUCTIONS = "Call init() first, with loaded from your context for the dev's memory. apply()/undo() return the command to run and the operations; pass content: true only if you cannot run commands. Later, doctor() shows drift.";
+var CODEX_BASIC_INSTRUCTIONS = 'Call init() first, with loaded.files = what Codex showed you: the folder from each "# AGENTS.md instructions for <folder>" header, and "user" for the block with no folder. Never build a path. apply()/undo() return the command to run and the operations. Later, doctor() shows drift.';
 function fullInstructions(allowWrite) {
   const tools = [...SERVE_TOOLS, ...SETUP_TOOLS, ...allowWrite ? WRITE_TOOLS : []];
   const words = ["", "", "", "", "", "Five", "Six"];
@@ -11607,7 +11620,7 @@ function createMcpServer(root, options = {}) {
   if (options.host) setHost(options.host);
   const profile = options.profile === "full" ? "full" : "basic";
   const allowWrite = options.allowWrite === true;
-  const instructions = profile === "full" ? fullInstructions(allowWrite) : BASIC_INSTRUCTIONS;
+  const instructions = profile === "full" ? fullInstructions(allowWrite) : currentHost() === "codex" ? CODEX_BASIC_INSTRUCTIONS : BASIC_INSTRUCTIONS;
   const server = new McpServer({ name: "minnimemory", version: VERSION }, { instructions });
   if (profile === "full") {
     registerServeTools(server, root, allowWrite);
@@ -11751,12 +11764,36 @@ function previewHandler(root, options, label, withMap) {
     force,
     format,
     diff,
-    loaded
+    loaded: given
   }) => {
+    let loaded = given;
+    let reportNote = "";
     try {
+      if (currentHost() === "codex" && (given || withMap)) {
+        if (!given) throw new McpTargetError(`init needs what Codex loaded for you. ${CODEX_REPORT_RULE} Then call init again with loaded.`);
+        const r = codexReportedFiles(given.files);
+        if (r.bad.length > 0) throw new McpTargetError(`these reported entries are not what Codex showed you: ${r.bad.join("; ")}. ${CODEX_REPORT_RULE}`);
+        loaded = { ...given, files: r.files };
+        const chain = codexLoadedFiles(root, { projectRoot: codexProjectRoot(root), configDir: hostConfigDir("codex") }).map((c) => c.abs);
+        const key = (f) => pathKey(path.resolve(f));
+        const reportedKeys = new Set(r.files.map(key));
+        const chainKeys = new Set(chain.map(key));
+        const unreported = chain.filter((f) => !reportedKeys.has(key(f)));
+        const extra = r.files.filter((f) => !chainKeys.has(key(f)));
+        const show = (f) => f.split(path.sep).join("/");
+        if (unreported.length > 0) reportNote += `
+  Codex also loads ${unreported.map(show).join(", ")} here, which the report left out; check your context for its block
+`;
+        if (extra.length > 0) reportNote += `
+  reported but not loaded by Codex from here: ${extra.map(show).join(", ")}
+`;
+      }
       const hostName = currentHost();
       const memoryDir = memoryDirFor(root, loaded);
-      const abs = resolveScanTarget(root, target, label, memoryDir);
+      let abs = resolveScanTarget(root, target, label, memoryDir);
+      const projectDir = abs;
+      const userTarget = withMap ? codexUserTarget(abs, { reported: reportFor(root, loaded), host: hostName }) : void 0;
+      if (userTarget) abs = userTarget.dir;
       if (!withMap && !readDiscovery(root) && detectPhase(abs) !== "compiled" && readFolderManifest(abs) === void 0 && readRepoRecord(abs) === void 0) {
         throw new McpTargetError(`run init first: doctor checks memory that init has already looked at, and nothing is recorded for this project or compiled at ${abs.split(path.sep).join("/")}. Call init, with loaded set for the dev's Claude Code memory.`);
       }
@@ -11768,10 +11805,12 @@ function previewHandler(root, options, label, withMap) {
         force: force === true
       });
       const preview = { ...built, audit: withMissingOriginal(built.audit) };
-      const mapDir = fs.existsSync(abs) && fs.statSync(abs).isFile() ? path.dirname(abs) : abs;
+      const mapDir = userTarget ? projectDir : fs.existsSync(abs) && fs.statSync(abs).isFile() ? path.dirname(abs) : abs;
       const codexMap = withMap && hostName === "codex" && preview.workspace.shape !== "memory-dir" ? buildCodexMap(root, { projectRoot: mapDir }) : void 0;
       const map = !withMap || codexMap ? void 0 : preview.workspace.shape === "memory-dir" ? memoryFolderMap(preview.workspace) : buildClaudeMap(mapDir, { machine: false, projectRoot: root });
-      const mapText = codexMap ? renderCodexMap(codexMap, { limit: MCP_MAP_FILES_PER_GROUP }) : map ? renderClaudeMap(map, { limit: MCP_MAP_FILES_PER_GROUP }) : "";
+      const mapText = (codexMap ? renderCodexMap(codexMap, { limit: MCP_MAP_FILES_PER_GROUP }) : map ? renderClaudeMap(map, { limit: MCP_MAP_FILES_PER_GROUP }) : "") + (userTarget ? `  ${codexUserTargetNote(projectDir, userTarget)}
+
+` : "");
       const planTarget = preview.workspace.folderRoot ? agentTarget(root, preview.workspace.folderRoot) : void 0;
       const text = format === "json" ? compactJson(renderPreviewJson(preview, planTarget)) : renderPreviewText(preview, { color: false, ci: false, applyCommand: "apply()", diff: diff ?? "summary", target: planTarget, displayLimit: MCP_FINDINGS_PER_RULE, mcp: true });
       if (format === "json" && (map || codexMap)) {
@@ -11793,7 +11832,7 @@ function previewHandler(root, options, label, withMap) {
         content: [
           {
             type: "text",
-            text: asData(format === "json" ? text : mapText + text) + savedNote + (projectNote ? `
+            text: asData(format === "json" ? text : mapText + text) + reportNote + savedNote + (projectNote ? `
   ${projectNote}
 ` : "") + (foreign ? `
   ${foreign}

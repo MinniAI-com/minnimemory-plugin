@@ -6027,8 +6027,197 @@ function repoRecordedSet(root) {
   return { files, source: "saved", savedBy: "repo" };
 }
 
-// src/audit/policy.ts
+// src/workspace/codexLoad.ts
 import fs5 from "node:fs";
+import path5 from "node:path";
+var CODEX_DEFAULT_CAP = 32 * 1024;
+var CODEX_HOST_FILES = ["AGENTS.override.md", "AGENTS.md"];
+function readToml(text2) {
+  const out = /* @__PURE__ */ new Map();
+  let table = "";
+  for (const raw of text2.split(/\r?\n/)) {
+    const line = raw.replace(/\s#.*$/, "").trim();
+    if (!line || line.startsWith("#")) continue;
+    const header = /^\[\s*([^\]]+?)\s*\]$/.exec(line);
+    if (header) {
+      table = (header[1] ?? "").replace(/"/g, "").trim();
+      out.set(table, true);
+      continue;
+    }
+    const kv = /^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/.exec(line);
+    if (!kv) continue;
+    const key2 = table ? `${table}.${kv[1]}` : kv[1];
+    const value = kv[2].trim();
+    if (/^-?\d+$/.test(value)) out.set(key2, Number(value));
+    else if (value === "true" || value === "false") out.set(key2, value === "true");
+    else if (/^".*"$/.test(value) || /^'.*'$/.test(value)) out.set(key2, value.slice(1, -1));
+    else if (value.startsWith("[") && value.endsWith("]")) {
+      out.set(
+        key2,
+        value.slice(1, -1).split(",").map((v) => v.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
+      );
+    }
+  }
+  return out;
+}
+function readText2(abs) {
+  try {
+    return fs5.readFileSync(abs, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function readCodexConfig(configDir, projectRoot) {
+  const config = { projectDocMaxBytes: CODEX_DEFAULT_CAP, capSource: "default", fallbackNames: [], hooksEnabled: true, memoriesEnabled: false, mcpHasMinnimemory: false };
+  const files = [path5.join(configDir, "config.toml"), ...projectRoot ? [path5.join(projectRoot, ".codex", "config.toml")] : []];
+  for (const f of files) {
+    const text2 = readText2(f);
+    if (text2 === void 0) continue;
+    const t = readToml(text2);
+    const cap = t.get("project_doc_max_bytes");
+    if (typeof cap === "number" && cap > 0) {
+      config.projectDocMaxBytes = cap;
+      config.capSource = f;
+    }
+    const names = t.get("project_doc_fallback_filenames");
+    if (Array.isArray(names)) config.fallbackNames = names;
+    const hooks = t.get("features.hooks");
+    if (typeof hooks === "boolean") config.hooksEnabled = hooks;
+    const memories = t.get("features.memories");
+    if (typeof memories === "boolean") config.memoriesEnabled = memories;
+    const useMemories = t.get("memories.use_memories");
+    if (typeof useMemories === "boolean") config.memoriesEnabled = useMemories;
+    if (t.has("mcp_servers.minnimemory")) config.mcpHasMinnimemory = true;
+  }
+  return config;
+}
+function codexProjectRoot(cwd) {
+  let dir = path5.resolve(cwd);
+  for (; ; ) {
+    if (fs5.existsSync(path5.join(dir, ".git"))) return dir;
+    const parent = path5.dirname(dir);
+    if (parent === dir) return path5.resolve(cwd);
+    dir = parent;
+  }
+}
+function nonEmptyFile(abs) {
+  try {
+    const st = fs5.statSync(abs);
+    return st.isFile() && st.size > 0 ? st.size : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function pickIn(dir, names) {
+  for (const name of names) {
+    const abs = path5.join(dir, name);
+    const bytes = nonEmptyFile(abs);
+    if (bytes === void 0) continue;
+    const agents = path5.join(dir, "AGENTS.md");
+    const shadows = name === "AGENTS.override.md" && nonEmptyFile(agents) !== void 0 ? agents : void 0;
+    return { abs, bytes, ...shadows ? { shadows } : {} };
+  }
+  return void 0;
+}
+function codexFileIn(dir, config) {
+  return pickIn(dir, codexCandidateNames(config))?.abs;
+}
+function codexUserHostFile(configDir) {
+  return pickIn(configDir, CODEX_HOST_FILES);
+}
+function codexMemoriesDir(configDir) {
+  const abs = path5.join(configDir, "memories");
+  let files = 0;
+  let bytes = 0;
+  const walk = (dir, depth) => {
+    let entries2;
+    try {
+      entries2 = fs5.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries2) {
+      const full = path5.join(dir, e.name);
+      if (e.isDirectory() && depth < 4) walk(full, depth + 1);
+      else if (e.isFile()) {
+        files++;
+        try {
+          bytes += fs5.statSync(full).size;
+        } catch {
+        }
+      }
+    }
+  };
+  walk(abs, 0);
+  return files > 0 ? { abs, files, bytes } : void 0;
+}
+function inCodexMemories(configDir, dir) {
+  const rel = path5.relative(path5.join(configDir, "memories"), path5.resolve(dir));
+  return rel === "" || !rel.startsWith("..") && !path5.isAbsolute(rel);
+}
+function codexCandidateNames(config) {
+  return [...CODEX_HOST_FILES, ...config.fallbackNames.filter((n) => !CODEX_HOST_FILES.includes(n))];
+}
+function codexLoadedFiles(cwd, opts) {
+  const config = opts.config ?? readCodexConfig(opts.configDir, opts.projectRoot);
+  const names = codexCandidateNames(config);
+  const out = [];
+  let total = 0;
+  let order = 0;
+  const push = (f, layer) => {
+    const loaded = layer === "user" || total + f.bytes <= config.projectDocMaxBytes;
+    const kept = !loaded && total < config.projectDocMaxBytes ? config.projectDocMaxBytes - total : 0;
+    if (layer === "project") total = Math.min(total + f.bytes, config.projectDocMaxBytes);
+    out.push({ abs: f.abs, layer, bytes: f.bytes, loaded, order: order++, ...kept > 0 ? { keptBytes: kept } : {}, ...f.shadows ? { shadows: f.shadows } : {} });
+  };
+  const user = opts.user !== false ? codexUserHostFile(opts.configDir) : void 0;
+  if (user) push(user, "user");
+  const root = path5.resolve(opts.projectRoot);
+  const leaf = path5.resolve(cwd);
+  const rel = path5.relative(root, leaf);
+  const inside2 = rel === "" || !rel.startsWith("..") && !path5.isAbsolute(rel);
+  const dirs = [root];
+  if (inside2 && rel) {
+    let dir = root;
+    for (const seg of rel.split(path5.sep)) {
+      dir = path5.join(dir, seg);
+      dirs.push(dir);
+    }
+  }
+  for (const dir of dirs) {
+    const f = pickIn(dir, names);
+    if (f && !(user && pathKey(path5.resolve(f.abs)) === pathKey(path5.resolve(user.abs)))) push(f, "project");
+  }
+  return out;
+}
+function codexNestedFiles(cwd, config, limits = { depth: 8, dirs: 5e3 }) {
+  const names = codexCandidateNames(config);
+  const skip = /* @__PURE__ */ new Set([".git", "node_modules", ".minnimemory", "dist", "build", "out", "target", "vendor", ".venv", "venv", "__pycache__", ".next", "coverage"]);
+  const out = [];
+  let dirs = 0;
+  const walk = (dir, depth) => {
+    if (depth > limits.depth || dirs > limits.dirs) return;
+    let entries2;
+    try {
+      entries2 = fs5.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!e.isDirectory() || skip.has(e.name) || e.name.startsWith(".")) continue;
+      dirs++;
+      const sub = path5.join(dir, e.name);
+      const f = pickIn(sub, names);
+      if (f) out.push({ abs: f.abs, bytes: f.bytes });
+      walk(sub, depth + 1);
+    }
+  };
+  walk(path5.resolve(cwd), 1);
+  return out;
+}
+
+// src/audit/policy.ts
+import fs6 from "node:fs";
 var PolicyError = class extends Error {
 };
 var MAX_FILE_BYTES = 256 * 1024;
@@ -6121,14 +6310,14 @@ function parsePolicy(raw) {
 function loadPolicy(file) {
   let size;
   try {
-    size = fs5.statSync(file).size;
+    size = fs6.statSync(file).size;
   } catch {
     throw new PolicyError(`no policy file at ${file}`);
   }
   if (size > MAX_FILE_BYTES) throw new PolicyError(`the policy file is over ${MAX_FILE_BYTES / 1024} KB`);
   let raw;
   try {
-    raw = JSON.parse(fs5.readFileSync(file, "utf8"));
+    raw = JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     throw new PolicyError("the policy file is not valid JSON");
   }
@@ -6139,8 +6328,8 @@ function collapse(s) {
 }
 
 // src/audit/rules.ts
-import fs6 from "node:fs";
-import path5 from "node:path";
+import fs7 from "node:fs";
+import path6 from "node:path";
 
 // src/workspace/claudeIndex.ts
 var CLAUDE_INDEX_MAX_LINES = 200;
@@ -6241,11 +6430,11 @@ function treeRuns(file) {
   return out;
 }
 function duplicatedScripts(file, root) {
-  const pkgPath = path5.join(root, "package.json");
-  if (!fs6.existsSync(pkgPath)) return [];
+  const pkgPath = path6.join(root, "package.json");
+  if (!fs7.existsSync(pkgPath)) return [];
   let names = [];
   try {
-    const pkg = JSON.parse(fs6.readFileSync(pkgPath, "utf8"));
+    const pkg = JSON.parse(fs7.readFileSync(pkgPath, "utf8"));
     names = Object.keys(pkg.scripts ?? {});
   } catch {
     return [];
@@ -6309,8 +6498,8 @@ function referenceIndex(candidates) {
   const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const byName = /* @__PURE__ */ new Map();
   for (const c of candidates) {
-    const stem3 = path5.basename(c.rel).replace(/\.md$/i, "");
-    for (const name of /* @__PURE__ */ new Set([c.rel, path5.basename(c.rel), `[[${stem3}]]`, `[[${stem3}|`])) {
+    const stem3 = path6.basename(c.rel).replace(/\.md$/i, "");
+    for (const name of /* @__PURE__ */ new Set([c.rel, path6.basename(c.rel), `[[${stem3}]]`, `[[${stem3}|`])) {
       const list = byName.get(name);
       if (list) list.push(c);
       else byName.set(name, [c]);
@@ -6593,10 +6782,10 @@ var mm010 = {
     const out = [];
     const remedy = `re-apply with: ${applyCommand(void 0, root)}  (recompiles the always-loaded files, keeps every routed file, rewrites the list and manifest)`;
     const byName = new Map(
-      workspace.files.filter((f) => containedIn(root, f.abs)).map((f) => [path5.basename(f.abs), f])
+      workspace.files.filter((f) => containedIn(root, f.abs)).map((f) => [path6.basename(f.abs), f])
     );
     const check = (file, hash2, verbatim) => {
-      const found = byName.get(path5.basename(file));
+      const found = byName.get(path6.basename(file));
       if (!found) {
         out.push({ rule: "MM010", severity: "med", message: `${file} is in the manifest but missing on disk`, file, hint: remedy });
         return;
@@ -6640,7 +6829,7 @@ var mm010 = {
         message: `${rel} ${MM010_NOT_IMPORTED}`,
         file: rel,
         ...file ? { tokens: file.tokens } : {},
-        hint: `put the import back: a line "@${path5.join(root, rel).split(path5.sep).join("/")}" in the file that imported it (usually the user CLAUDE.md); or move the file to OnDemandMemory/ with a list line in ${manifest.index.file} and re-apply. A re-apply alone does not change this`
+        hint: `put the import back: a line "@${path6.join(root, rel).split(path6.sep).join("/")}" in the file that imported it (usually the user CLAUDE.md); or move the file to OnDemandMemory/ with a list line in ${manifest.index.file} and re-apply. A re-apply alone does not change this`
       });
     }
     return out;
@@ -6711,7 +6900,7 @@ function fileGraphStats(files) {
   const units = [];
   const owner = [];
   for (const file of files) {
-    const name = path5.basename(file.rel).replace(/\.md$/i, "");
+    const name = path6.basename(file.rel).replace(/\.md$/i, "");
     for (const unit of unitsOf({ name, file: file.rel }, file.content)) {
       units.push(unit);
       owner.push(file);
@@ -6824,7 +7013,7 @@ var mm017 = {
 function renamedTwin(deadStem, files) {
   const dead = deadStem.toLowerCase();
   return files.find((f) => {
-    const stem3 = path5.basename(f.rel).replace(/\.md$/i, "").toLowerCase();
+    const stem3 = path6.basename(f.rel).replace(/\.md$/i, "").toLowerCase();
     if (stem3 === dead || !stem3.startsWith(dead)) return false;
     return /^[\s._-]*(\(?old\)?|copy|bak|backup|v?\d+)$/.test(stem3.slice(dead.length));
   });
@@ -6847,9 +7036,9 @@ var mm018 = {
         } catch {
           target = raw;
         }
-        const tries = [path5.resolve(path5.dirname(list.abs), target), path5.resolve(workspace.root, target)];
-        if (tries.some((p) => fs6.existsSync(p))) continue;
-        const twin = renamedTwin(path5.basename(target).replace(/\.md$/i, ""), workspace.files);
+        const tries = [path6.resolve(path6.dirname(list.abs), target), path6.resolve(workspace.root, target)];
+        if (tries.some((p) => fs7.existsSync(p))) continue;
+        const twin = renamedTwin(path6.basename(target).replace(/\.md$/i, ""), workspace.files);
         out.push({
           rule: "MM018",
           severity: "med",
@@ -6882,10 +7071,10 @@ function misroutedListLines(workspace) {
   const list = workspace.onDemandList;
   if (!list) return [];
   const others = workspace.files.filter((f) => f !== list && /\.md$/i.test(f.rel));
-  const text2 = new Map(others.map((f) => [path5.resolve(f.abs), f.content.toLowerCase()]));
+  const text2 = new Map(others.map((f) => [path6.resolve(f.abs), f.content.toLowerCase()]));
   let headingText;
   const headingsOf = (key2) => {
-    headingText ??= new Map(others.map((f) => [path5.resolve(f.abs), text2.get(path5.resolve(f.abs)).split("\n").filter((l) => /^\s*#/.test(l)).join("\n")]));
+    headingText ??= new Map(others.map((f) => [path6.resolve(f.abs), text2.get(path6.resolve(f.abs)).split("\n").filter((l) => /^\s*#/.test(l)).join("\n")]));
     return headingText.get(key2);
   };
   const holders = /* @__PURE__ */ new Map();
@@ -6911,7 +7100,7 @@ function misroutedListLines(workspace) {
       target = decodeURI(target);
     } catch {
     }
-    return [path5.resolve(path5.dirname(list.abs), target), path5.resolve(workspace.root, target)].find((p) => text2.has(p));
+    return [path6.resolve(path6.dirname(list.abs), target), path6.resolve(workspace.root, target)].find((p) => text2.has(p));
   };
   const listed = new Set(list.lines.flatMap((line) => {
     const t = listLinkTarget(line);
@@ -6930,14 +7119,14 @@ function misroutedListLines(workspace) {
     const own = share(terms, abs);
     let best;
     for (const f of others) {
-      const p = path5.resolve(f.abs);
+      const p = path6.resolve(f.abs);
       if (p === abs) continue;
       const s = share(terms, p, text2.get(p).length > MM019_SIZE_RATIO * ownLength);
       if (!best || s > best.share) best = { file: f, share: s };
     }
     if (!best || best.share < MM019_OTHER_SHARE || best.share - own < MM019_GAP) return;
     const plainOwn = terms.filter((t) => holdersOf(t, false).has(abs)).length / terms.length;
-    if (plainOwn >= 0.5 && listed.has(path5.resolve(best.file.abs))) return;
+    if (plainOwn >= 0.5 && listed.has(path6.resolve(best.file.abs))) return;
     out.push({ index: i, linked, linkedAbs: abs, best: best.file, bestShare: best.share, ownShare: own, plainOwn });
   });
   return out;
@@ -6949,7 +7138,7 @@ function swappedListPairs(workspace) {
   for (const a of lines) {
     if (used.has(a.index)) continue;
     const b = lines.find(
-      (x) => !used.has(x.index) && x.index !== a.index && path5.resolve(x.linkedAbs) === path5.resolve(a.best.abs) && path5.resolve(x.best.abs) === path5.resolve(a.linkedAbs)
+      (x) => !used.has(x.index) && x.index !== a.index && path6.resolve(x.linkedAbs) === path6.resolve(a.best.abs) && path6.resolve(x.best.abs) === path6.resolve(a.linkedAbs)
     );
     if (!b) continue;
     used.add(a.index).add(b.index);
@@ -7079,10 +7268,10 @@ var mm022 = {
     const codex = workspace.codex;
     if (workspace.host !== "codex" || !codex) return [];
     const out = [];
-    const show = (abs) => containedIn(workspace.root, abs) ? path5.relative(workspace.root, abs).split(path5.sep).join("/") : abs;
+    const show = (abs) => containedIn(workspace.root, abs) ? path6.relative(workspace.root, abs).split(path6.sep).join("/") : abs;
     const capFrom = codex.capSource === "default" ? "Codex's default" : codex.capSource;
     for (const c of codex.chain.filter((f) => !f.loaded)) {
-      const file = workspace.files.find((f) => f.dropped && path5.resolve(f.abs) === path5.resolve(c.abs));
+      const file = workspace.files.find((f) => f.dropped && path6.resolve(f.abs) === path6.resolve(c.abs));
       out.push({
         rule: "MM022",
         severity: "high",
@@ -7102,7 +7291,7 @@ var mm023 = {
   run({ workspace }) {
     const codex = workspace.codex;
     if (workspace.host !== "codex" || !codex) return [];
-    const show = (abs) => containedIn(workspace.root, abs) ? path5.relative(workspace.root, abs).split(path5.sep).join("/") : abs;
+    const show = (abs) => containedIn(workspace.root, abs) ? path6.relative(workspace.root, abs).split(path6.sep).join("/") : abs;
     return codex.chain.filter((c) => c.shadows !== void 0).map((c) => ({
       rule: "MM023",
       severity: "low",
@@ -7126,8 +7315,8 @@ import os2 from "node:os";
 import path8 from "node:path";
 
 // src/workspace/claudeLoad.ts
-import fs7 from "node:fs";
-import path6 from "node:path";
+import fs8 from "node:fs";
+import path7 from "node:path";
 var CLAUDE_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
 var AGENTS_FILES = ["AGENTS.md", ".claude/AGENTS.md"];
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".minnimemory", "dist", "build", "out", "target", "vendor", ".venv", "venv", "__pycache__", ".next", "coverage"]);
@@ -7135,7 +7324,7 @@ var MAX_WALK_DEPTH = 8;
 var MAX_WALK_DIRS = 5e3;
 function isFile(abs) {
   try {
-    return fs7.statSync(abs).isFile();
+    return fs8.statSync(abs).isFile();
   } catch {
     return false;
   }
@@ -7176,17 +7365,17 @@ function listRuleFiles(rulesDir) {
   const walk = (dir) => {
     let entries2;
     try {
-      entries2 = fs7.readdirSync(dir, { withFileTypes: true });
+      entries2 = fs8.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
-      const abs = path6.join(dir, e.name);
+      const abs = path7.join(dir, e.name);
       if (e.isDirectory()) walk(abs);
       else if (e.isFile() && e.name.toLowerCase().endsWith(".md")) {
         let content = "";
         try {
-          content = fs7.readFileSync(abs, "utf8");
+          content = fs8.readFileSync(abs, "utf8");
         } catch {
         }
         out.push({ abs, globs: ruleGlobs(content) });
@@ -7198,24 +7387,24 @@ function listRuleFiles(rulesDir) {
 }
 function ancestorsRootFirst(cwd) {
   const out = [];
-  const stop = process.env.MINNIMEMORY_ANCESTOR_STOP ? path6.resolve(process.env.MINNIMEMORY_ANCESTOR_STOP).toLowerCase() : void 0;
-  let dir = path6.resolve(cwd);
+  const stop = process.env.MINNIMEMORY_ANCESTOR_STOP ? path7.resolve(process.env.MINNIMEMORY_ANCESTOR_STOP).toLowerCase() : void 0;
+  let dir = path7.resolve(cwd);
   for (; ; ) {
     out.unshift(dir);
-    const parent = path6.dirname(dir);
+    const parent = path7.dirname(dir);
     if (parent === dir || dir.toLowerCase() === stop) break;
     dir = parent;
   }
   return out;
 }
 function agentsMdActive(cwd, excluded = () => false, within) {
-  const userHost = path6.resolve(claudeConfigDir(), "CLAUDE.md").toLowerCase();
-  const bound = within ? path6.resolve(within).toLowerCase() : void 0;
-  const dirs = ancestorsRootFirst(cwd).filter((d) => !bound || d.toLowerCase() === bound || d.toLowerCase().startsWith(bound + path6.sep));
+  const userHost = path7.resolve(claudeConfigDir(), "CLAUDE.md").toLowerCase();
+  const bound = within ? path7.resolve(within).toLowerCase() : void 0;
+  const dirs = ancestorsRootFirst(cwd).filter((d) => !bound || d.toLowerCase() === bound || d.toLowerCase().startsWith(bound + path7.sep));
   return !dirs.some(
     (dir) => CLAUDE_FILES.some((f) => {
-      const abs = path6.join(dir, f);
-      return path6.resolve(abs).toLowerCase() !== userHost && !excluded(abs) && isFile(abs);
+      const abs = path7.join(dir, f);
+      return path7.resolve(abs).toLowerCase() !== userHost && !excluded(abs) && isFile(abs);
     })
   );
 }
@@ -7235,12 +7424,12 @@ function globToRegExp(glob) {
   return new RegExp(`^${re}$`, process.platform === "win32" ? "i" : "");
 }
 function claudeMdExcludes(projectRoot, machine) {
-  const files = [path6.join(projectRoot, ".claude", "settings.json"), path6.join(projectRoot, ".claude", "settings.local.json")];
-  if (machine) files.unshift(path6.join(claudeConfigDir(), "settings.json"));
+  const files = [path7.join(projectRoot, ".claude", "settings.json"), path7.join(projectRoot, ".claude", "settings.local.json")];
+  if (machine) files.unshift(path7.join(claudeConfigDir(), "settings.json"));
   const patterns = [];
   for (const f of files) {
     try {
-      const raw = JSON.parse(fs7.readFileSync(f, "utf8"));
+      const raw = JSON.parse(fs8.readFileSync(f, "utf8"));
       if (Array.isArray(raw.claudeMdExcludes)) {
         for (const p of raw.claudeMdExcludes) if (typeof p === "string" && p) patterns.push(globToRegExp(p));
       }
@@ -7248,48 +7437,48 @@ function claudeMdExcludes(projectRoot, machine) {
     }
   }
   return (abs) => {
-    const p = path6.resolve(abs).split(path6.sep).join("/");
+    const p = path7.resolve(abs).split(path7.sep).join("/");
     return patterns.some((re) => re.test(p));
   };
 }
 function claudeLoadedFiles(cwd, options) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
-  const root = path6.resolve(options.projectRoot ?? cwd);
+  const root = path7.resolve(options.projectRoot ?? cwd);
   const excluded = claudeMdExcludes(root, options.machine);
   const add = (f) => {
-    const key2 = path6.resolve(f.abs).toLowerCase();
+    const key2 = path7.resolve(f.abs).toLowerCase();
     if (seen.has(key2) || !isFile(f.abs)) return;
     if (f.owner !== "managed" && excluded(f.abs)) return;
     seen.add(key2);
     out.push(f);
   };
-  const inProject = (dir) => dir.toLowerCase() === root.toLowerCase() || dir.toLowerCase().startsWith(root.toLowerCase() + path6.sep);
+  const inProject = (dir) => dir.toLowerCase() === root.toLowerCase() || dir.toLowerCase().startsWith(root.toLowerCase() + path7.sep);
   const notLoaded = options.report?.agentsNotLoaded;
   const passOver = (dir) => {
     if (!notLoaded || !inProject(dir)) return;
-    const beside = CLAUDE_FILES.find((f) => isFile(path6.join(dir, f)) && !excluded(path6.join(dir, f)));
+    const beside = CLAUDE_FILES.find((f) => isFile(path7.join(dir, f)) && !excluded(path7.join(dir, f)));
     for (const f of AGENTS_FILES) {
-      const abs = path6.join(dir, f);
+      const abs = path7.join(dir, f);
       if (isFile(abs) && !excluded(abs) && !notLoaded.some((n) => n.abs === abs)) notLoaded.push({ abs, dir, beside });
     }
   };
   if (options.machine) {
     add({ abs: managedPolicyPath(), owner: "managed", when: "session" });
     const config = claudeConfigDir();
-    add({ abs: path6.join(config, "CLAUDE.md"), owner: "user", when: "session" });
-    for (const r of listRuleFiles(path6.join(config, "rules"))) {
+    add({ abs: path7.join(config, "CLAUDE.md"), owner: "user", when: "session" });
+    for (const r of listRuleFiles(path7.join(config, "rules"))) {
       add({ abs: r.abs, owner: "user", when: r.globs.length ? "path-rule" : "session", trigger: r.globs.join(", ") || void 0 });
     }
   }
   const agents = agentsMdActive(cwd, excluded, options.machine ? void 0 : root);
   for (const dir of ancestorsRootFirst(cwd)) {
     if (!options.machine && !inProject(dir)) continue;
-    for (const f of CLAUDE_FILES) add({ abs: path6.join(dir, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "session" });
-    if (agents) for (const f of AGENTS_FILES) add({ abs: path6.join(dir, f), owner: "project", when: "session" });
+    for (const f of CLAUDE_FILES) add({ abs: path7.join(dir, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "session" });
+    if (agents) for (const f of AGENTS_FILES) add({ abs: path7.join(dir, f), owner: "project", when: "session" });
     else passOver(dir);
   }
-  for (const r of listRuleFiles(path6.join(path6.resolve(cwd), ".claude", "rules"))) {
+  for (const r of listRuleFiles(path7.join(path7.resolve(cwd), ".claude", "rules"))) {
     add({ abs: r.abs, owner: "project", when: r.globs.length ? "path-rule" : "session", trigger: r.globs.join(", ") || void 0 });
   }
   if (options.subfolders === false) return out;
@@ -7301,165 +7490,21 @@ function claudeLoadedFiles(cwd, options) {
     }
     let entries2;
     try {
-      entries2 = fs7.readdirSync(dir, { withFileTypes: true });
+      entries2 = fs8.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
       if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith(".")) continue;
       dirs++;
-      const sub = path6.join(dir, e.name);
-      const hasClaude = CLAUDE_FILES.some((f) => isFile(path6.join(sub, f)));
-      for (const f of CLAUDE_FILES) add({ abs: path6.join(sub, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "subfolder", trigger: sub });
-      if (agents && !hasClaude) for (const f of AGENTS_FILES) add({ abs: path6.join(sub, f), owner: "project", when: "subfolder", trigger: sub });
+      const sub = path7.join(dir, e.name);
+      const hasClaude = CLAUDE_FILES.some((f) => isFile(path7.join(sub, f)));
+      for (const f of CLAUDE_FILES) add({ abs: path7.join(sub, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "subfolder", trigger: sub });
+      if (agents && !hasClaude) for (const f of AGENTS_FILES) add({ abs: path7.join(sub, f), owner: "project", when: "subfolder", trigger: sub });
       else passOver(sub);
-      for (const r of listRuleFiles(path6.join(sub, ".claude", "rules"))) {
+      for (const r of listRuleFiles(path7.join(sub, ".claude", "rules"))) {
         add({ abs: r.abs, owner: "project", when: r.globs.length ? "path-rule" : "subfolder", trigger: r.globs.join(", ") || sub });
       }
-      walk(sub, depth + 1);
-    }
-  };
-  walk(path6.resolve(cwd), 1);
-  return out;
-}
-
-// src/workspace/codexLoad.ts
-import fs8 from "node:fs";
-import path7 from "node:path";
-var CODEX_DEFAULT_CAP = 32 * 1024;
-var CODEX_HOST_FILES = ["AGENTS.override.md", "AGENTS.md"];
-function readToml(text2) {
-  const out = /* @__PURE__ */ new Map();
-  let table = "";
-  for (const raw of text2.split(/\r?\n/)) {
-    const line = raw.replace(/\s#.*$/, "").trim();
-    if (!line || line.startsWith("#")) continue;
-    const header = /^\[\s*([^\]]+?)\s*\]$/.exec(line);
-    if (header) {
-      table = (header[1] ?? "").replace(/"/g, "").trim();
-      out.set(table, true);
-      continue;
-    }
-    const kv = /^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/.exec(line);
-    if (!kv) continue;
-    const key2 = table ? `${table}.${kv[1]}` : kv[1];
-    const value = kv[2].trim();
-    if (/^-?\d+$/.test(value)) out.set(key2, Number(value));
-    else if (value === "true" || value === "false") out.set(key2, value === "true");
-    else if (/^".*"$/.test(value) || /^'.*'$/.test(value)) out.set(key2, value.slice(1, -1));
-    else if (value.startsWith("[") && value.endsWith("]")) {
-      out.set(
-        key2,
-        value.slice(1, -1).split(",").map((v) => v.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
-      );
-    }
-  }
-  return out;
-}
-function readText2(abs) {
-  try {
-    return fs8.readFileSync(abs, "utf8");
-  } catch {
-    return void 0;
-  }
-}
-function readCodexConfig(configDir, projectRoot) {
-  const config = { projectDocMaxBytes: CODEX_DEFAULT_CAP, capSource: "default", fallbackNames: [], hooksEnabled: true, memoriesEnabled: false, mcpHasMinnimemory: false };
-  const files = [path7.join(configDir, "config.toml"), ...projectRoot ? [path7.join(projectRoot, ".codex", "config.toml")] : []];
-  for (const f of files) {
-    const text2 = readText2(f);
-    if (text2 === void 0) continue;
-    const t = readToml(text2);
-    const cap = t.get("project_doc_max_bytes");
-    if (typeof cap === "number" && cap > 0) {
-      config.projectDocMaxBytes = cap;
-      config.capSource = f;
-    }
-    const names = t.get("project_doc_fallback_filenames");
-    if (Array.isArray(names)) config.fallbackNames = names;
-    const hooks = t.get("features.hooks");
-    if (typeof hooks === "boolean") config.hooksEnabled = hooks;
-    const memories = t.get("features.memories");
-    if (typeof memories === "boolean") config.memoriesEnabled = memories;
-    if (t.has("mcp_servers.minnimemory")) config.mcpHasMinnimemory = true;
-  }
-  return config;
-}
-function nonEmptyFile(abs) {
-  try {
-    const st = fs8.statSync(abs);
-    return st.isFile() && st.size > 0 ? st.size : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function pickIn(dir, names) {
-  for (const name of names) {
-    const abs = path7.join(dir, name);
-    const bytes = nonEmptyFile(abs);
-    if (bytes === void 0) continue;
-    const agents = path7.join(dir, "AGENTS.md");
-    const shadows = name === "AGENTS.override.md" && nonEmptyFile(agents) !== void 0 ? agents : void 0;
-    return { abs, bytes, ...shadows ? { shadows } : {} };
-  }
-  return void 0;
-}
-function codexCandidateNames(config) {
-  return [...CODEX_HOST_FILES, ...config.fallbackNames.filter((n) => !CODEX_HOST_FILES.includes(n))];
-}
-function codexLoadedFiles(cwd, opts) {
-  const config = opts.config ?? readCodexConfig(opts.configDir, opts.projectRoot);
-  const names = codexCandidateNames(config);
-  const out = [];
-  let total = 0;
-  let order = 0;
-  const push = (f, layer) => {
-    const loaded = layer === "user" || total + f.bytes <= config.projectDocMaxBytes;
-    const kept = !loaded && total < config.projectDocMaxBytes ? config.projectDocMaxBytes - total : 0;
-    if (layer === "project") total = Math.min(total + f.bytes, config.projectDocMaxBytes);
-    out.push({ abs: f.abs, layer, bytes: f.bytes, loaded, order: order++, ...kept > 0 ? { keptBytes: kept } : {}, ...f.shadows ? { shadows: f.shadows } : {} });
-  };
-  if (opts.user !== false) {
-    const user = pickIn(opts.configDir, CODEX_HOST_FILES);
-    if (user) push(user, "user");
-  }
-  const root = path7.resolve(opts.projectRoot);
-  const leaf = path7.resolve(cwd);
-  const rel = path7.relative(root, leaf);
-  const inside2 = rel === "" || !rel.startsWith("..") && !path7.isAbsolute(rel);
-  const dirs = [root];
-  if (inside2 && rel) {
-    let dir = root;
-    for (const seg of rel.split(path7.sep)) {
-      dir = path7.join(dir, seg);
-      dirs.push(dir);
-    }
-  }
-  for (const dir of dirs) {
-    const f = pickIn(dir, names);
-    if (f) push(f, "project");
-  }
-  return out;
-}
-function codexNestedFiles(cwd, config, limits = { depth: 8, dirs: 5e3 }) {
-  const names = codexCandidateNames(config);
-  const skip = /* @__PURE__ */ new Set([".git", "node_modules", ".minnimemory", "dist", "build", "out", "target", "vendor", ".venv", "venv", "__pycache__", ".next", "coverage"]);
-  const out = [];
-  let dirs = 0;
-  const walk = (dir, depth) => {
-    if (depth > limits.depth || dirs > limits.dirs) return;
-    let entries2;
-    try {
-      entries2 = fs8.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!e.isDirectory() || skip.has(e.name) || e.name.startsWith(".")) continue;
-      dirs++;
-      const sub = path7.join(dir, e.name);
-      const f = pickIn(sub, names);
-      if (f) out.push({ abs: f.abs, bytes: f.bytes });
       walk(sub, depth + 1);
     }
   };
@@ -7851,7 +7896,57 @@ function discover(target, options = {}) {
     const { imported: _imported, loadersKnown: _known, ...links } = linkHosts(files, root, options);
     return { root, shape: "memory-dir", files, onDemandList, folderRoot: root, ...links };
   }
-  throw new DiscoveryError(noMemoryMessage(abs));
+  throw new DiscoveryError(noMemoryMessage(abs, options.host ?? currentHost()));
+}
+function codexUserTarget(folder, options = {}) {
+  if ((options.host ?? currentHost()) !== "codex") return void 0;
+  const dir = hostConfigDir("codex");
+  const user = codexUserHostFile(dir);
+  if (!user) return void 0;
+  const abs = path8.resolve(folder);
+  if (pathKey(abs) === pathKey(path8.resolve(dir))) return void 0;
+  try {
+    discover(abs, { host: "codex" });
+    return void 0;
+  } catch (err) {
+    if (!(err instanceof DiscoveryError)) return void 0;
+  }
+  const reported = (options.reported?.files ?? []).some((f) => pathKey(path8.resolve(f)) === pathKey(path8.resolve(user.abs)));
+  return { dir, file: user.abs, reported };
+}
+var CODEX_REPORT_RULE = 'Set loaded.files to exactly what Codex showed you, never a path you build: the folder from each "# AGENTS.md instructions for <folder>" header, and "user" for the "# AGENTS.md instructions" block with no folder ([] if Codex showed none).';
+function codexReportedFiles(entries2, configDir = hostConfigDir("codex")) {
+  const files = [];
+  const bad = [];
+  let user = false;
+  for (const raw of entries2) {
+    const entry = raw.trim();
+    if (entry.toLowerCase() === "user") {
+      const u = codexUserHostFile(configDir);
+      if (u) {
+        files.push(u.abs);
+        user = true;
+      } else bad.push(`user (no AGENTS.md in ${configDir.split(path8.sep).join("/")}, the CODEX_HOME this server was given)`);
+      continue;
+    }
+    const abs = resolveReported(entry);
+    let st;
+    try {
+      st = fs9.statSync(abs);
+    } catch {
+      st = void 0;
+    }
+    if (st?.isDirectory()) {
+      const f = codexFileIn(abs, readCodexConfig(configDir, abs));
+      if (f) files.push(f);
+      else bad.push(`${entry} (no AGENTS.md in that folder)`);
+    } else if (st?.isFile() && /\.md$/i.test(abs)) files.push(abs);
+    else bad.push(`${entry} (does not exist)`);
+  }
+  return { files: [...new Set(files)], user, bad };
+}
+function codexUserTargetNote(folder, t) {
+  return `${path8.resolve(folder)} has no AGENTS.md of its own; Codex loads your user file ${t.file.split(path8.sep).join("/")} in every session${t.reported ? " (as the agent reported)" : ""}, so that is the file this works on.`;
 }
 function readCompiledHost(root, manifest, hostName = currentHost(), cwd) {
   const files = [];
@@ -7954,7 +8049,14 @@ function readCompiledFolder(folderRoot, manifest, options) {
     ...alwaysOnNotImported.length > 0 ? { alwaysOnNotImported } : {}
   };
 }
-function noMemoryMessage(abs) {
+function noMemoryMessage(abs, host) {
+  if (host === "codex") {
+    const dir = hostConfigDir("codex");
+    const memories = codexMemoriesDir(dir);
+    return `no memory files found in ${abs}
+  Codex loads ${CODEX_HOST_FILES.join(" or ")} from ${dir.split(path8.sep).join("/")} and from each folder from the repo root down to here; there is none.
+` + (memories ? `  Codex's own memories (${memories.files} file(s) in ${memories.abs.split(path8.sep).join("/")}) are generated by Codex and are not compiled; Codex keeps them itself.` : `  write an AGENTS.md here (or in ${dir.split(path8.sep).join("/")} for every project), then run init again`);
+  }
   return `no memory files found in ${abs}
   looked for: ${HOST_FILES.join(", ")}, a ${COMPILED_DIR2}/ directory, or a directory holding at least 3 markdown files (2 in a Claude Code memory folder with its MEMORY.md)
   only this folder and the folders below it are read; to audit a Claude Code memory folder, name it`;
@@ -8332,7 +8434,7 @@ function reportedFrom(options) {
   const files = [.../* @__PURE__ */ new Set([...(r?.files ?? []).map(resolveReported), ...legacy])];
   const bad = files.filter((f) => !/\.md$/i.test(f) || !isPlainFile(f));
   if (bad.length > 0) {
-    throw new DiscoveryError(`these reported files do not exist or are not markdown files: ${bad.join(", ")}. Report each path exactly as Claude Code shows it.`);
+    throw new DiscoveryError(`these reported files do not exist or are not markdown files: ${bad.join(", ")}. Report each path exactly as ${(options.host ?? currentHost()) === "codex" ? "Codex" : "Claude Code"} shows it.`);
   }
   const memoryDir = r?.memoryDir ? resolveReported(r.memoryDir) : void 0;
   if (memoryDir && !(fs9.existsSync(memoryDir) && fs9.statSync(memoryDir).isDirectory())) {
@@ -9248,7 +9350,7 @@ ${m.content.trimEnd()}
     const self = ws.codex.chain.find((c) => pathKey(path9.resolve(c.abs)) === pathKey(indexAbs));
     const ahead = ws.codex.chain.filter((c) => self !== void 0 && c.order < self.order && c.layer === "project" && c.loaded).reduce((n, c) => n + c.bytes, 0);
     const after2 = ahead + Buffer.byteLength(newIndex, "utf8");
-    if (self && after2 > ws.codex.cap) {
+    if (self && self.layer === "project" && after2 > ws.codex.cap) {
       const largest = [...sourcePlans].sort((a, b) => b.after - a.after)[0];
       throw new FolderError(
         `apply refused: ${indexRel} would still be ${(after2 - ws.codex.cap).toLocaleString("en-US")} bytes over Codex's cap after this plan (project_doc_max_bytes = ${ws.codex.cap.toLocaleString("en-US")}, from ${ws.codex.capSource}; ${ahead.toLocaleString("en-US")} bytes load ahead of it). Cut the always-loaded body${largest ? ` (largest piece: ${largest.rel})` : ""} with a lower --budget, or raise project_doc_max_bytes in ~/.codex/config.toml. Nothing was changed.`
@@ -9309,7 +9411,7 @@ ${m.content.trimEnd()}
   for (const s of changedSources) {
     if (s.routed.length > 0 && s.before > 0 && s.after * 10 < s.before) {
       warnings.push(
-        `${s.rel} keeps ${formatTokens(s.after)} of ${formatTokens(s.before)} tokens, so almost the whole file moves out, rules included. Claude will see only the list and must pick a file from its keywords. Put any rule that must always apply in a short section with no dates, so it stays.`
+        `${s.rel} keeps ${formatTokens(s.after)} of ${formatTokens(s.before)} tokens, so almost the whole file moves out, rules included. ${ws.host === "codex" ? "Codex" : "Claude"} will see only the list and must pick a file from its keywords. Put any rule that must always apply in a short section with no dates, so it stays.`
       );
     }
   }
@@ -11022,7 +11124,7 @@ function buildCodexMap(cwd, options) {
   const configDir = options.configDir ?? hostConfigDir("codex");
   const config = readCodexConfig(configDir, root);
   const leaf = containedIn(root, cwd) ? path16.resolve(cwd) : root;
-  const chain = codexLoadedFiles(leaf, { projectRoot: root, configDir, config }).map((c) => c.layer === "project" ? { ...c, tokens: tokensOf2(c.abs) } : c);
+  const chain = codexLoadedFiles(leaf, { projectRoot: root, configDir, config }).map((c) => ({ ...c, tokens: tokensOf2(c.abs) }));
   const onChain = new Set(chain.map((c) => path16.resolve(c.abs).toLowerCase()));
   const nested = codexNestedFiles(root, config).filter((n) => !onChain.has(path16.resolve(n.abs).toLowerCase()));
   const onDemand = [];
@@ -11036,6 +11138,7 @@ function buildCodexMap(cwd, options) {
     for (const n of names.sort()) onDemand.push({ abs: path16.join(dir, n), tokens: tokensOf2(path16.join(dir, n)) });
   }
   const rel = (abs) => path16.relative(root, abs).split(path16.sep).join("/");
+  const memories = codexMemoriesDir(configDir);
   return {
     host: "codex",
     cwd: path16.resolve(cwd),
@@ -11048,6 +11151,7 @@ function buildCodexMap(cwd, options) {
     sessionBytes: chain.filter((c) => c.layer === "project").reduce((n, c) => n + (c.loaded ? c.bytes : c.keptBytes ?? 0), 0),
     sessionTokens: chain.reduce((n, c) => n + (c.loaded ? c.tokens ?? 0 : Math.round((c.tokens ?? 0) * (c.keptBytes ?? 0) / Math.max(1, c.bytes))), 0),
     onDemand,
+    ...memories ? { memories } : {},
     setup: setupOf(root, rel, (abs) => onChain.has(path16.resolve(abs).toLowerCase()), "codex")
   };
 }
@@ -11058,7 +11162,7 @@ function renderCodexMap(map, options = {}) {
   const capFrom = map.config.capSource === "default" ? "Codex's default" : show(map.config.capSource);
   const lines = ["", `  memory map for ${map.cwd}: every file Codex loads, by its own rules`];
   if (map.setup) lines.push("", ...setupLines(map.setup, "Codex"), "");
-  lines.push(`  every session: ${formatTokens(map.sessionTokens)} tokens in this project, ${num(map.sessionBytes)} of the ${num(map.config.projectDocMaxBytes)}-byte cap (project_doc_max_bytes, ${capFrom})`);
+  lines.push(`  every session: ${formatTokens(map.sessionTokens)} tokens, ${num(map.sessionBytes)} of the ${num(map.config.projectDocMaxBytes)}-byte cap (project_doc_max_bytes, ${capFrom})`);
   lines.push("", `  the AGENTS.md chain (${map.chain.length} file(s)), user file first, then root to leaf; the cap counts project files, and Codex cuts the file that crosses it`);
   lines.push(`    ${"layer".padEnd(8)} ${"file".padEnd(48)} ${"bytes".padStart(8)}  loaded`);
   for (const c of map.chain.slice(0, limit)) {
@@ -11080,7 +11184,11 @@ function renderCodexMap(map, options = {}) {
   }
   lines.push("");
   lines.push("  Codex has no imports, rules folder or on-demand loading: the chain above is the whole always-loaded set");
-  if (map.config.memoriesEnabled) lines.push("  Codex memories (features.memories) are Codex-managed and are not touched");
+  if (map.memories) {
+    lines.push(
+      `  Codex memories: ${map.memories.files} file(s), ${num(map.memories.bytes)} bytes in ${map.memories.abs.replace(/\\/g, "/")} (${map.config.memoriesEnabled ? "on: Codex adds them to sessions" : "off in config.toml"}); Codex generates and rewrites them, so they are listed here and never compiled`
+    );
+  } else if (map.config.memoriesEnabled) lines.push("  Codex memories are on in config.toml; Codex manages them and they are not touched");
   if (!map.config.hooksEnabled) lines.push("  features.hooks is off in config.toml: the minnimemory hooks will not run until it is on");
   lines.push("");
   return lines.join("\n");
@@ -11097,7 +11205,8 @@ function codexMapJson(map, options = {}) {
     cap: { bytes: map.config.projectDocMaxBytes, source: map.config.capSource === "default" ? "default" : show(map.config.capSource) },
     chain: map.chain.slice(0, limit).map((c) => ({ layer: c.layer, path: show(c.abs), bytes: c.bytes, loaded: c.loaded, ...c.tokens !== void 0 ? { tokens: c.tokens } : {}, ...c.shadows ? { shadows: show(c.shadows) } : {} })),
     nested: map.nested.slice(0, limit).map((n) => ({ path: show(n.abs), bytes: n.bytes })),
-    onDemand: map.onDemand.slice(0, limit).map((f) => ({ path: show(f.abs), tokens: f.tokens }))
+    onDemand: map.onDemand.slice(0, limit).map((f) => ({ path: show(f.abs), tokens: f.tokens })),
+    ...map.memories ? { memories: { path: show(map.memories.abs), files: map.memories.files, bytes: map.memories.bytes, enabled: map.config.memoriesEnabled, compiled: false } } : {}
   };
 }
 
@@ -11408,7 +11517,7 @@ function renderHosts(ws, mcp) {
   const utf16 = [.../* @__PURE__ */ new Set([...ws.files.map((f) => f.abs), ...ws.reported?.files ?? []])].filter(isUtf16);
   list("saved as UTF-16: Claude Code reads it as plain text and does not follow its @ imports, so they never load; save it as UTF-8", utf16);
   lines.push(
-    ws.host === "codex" ? `  covers: this folder only; the user AGENTS.md under ${hostConfigDir("codex").split(path17.sep).join("/")} counts toward Codex's cap (the map shows it) but is not read here.` : isFolder ? "  covers: this folder and the files listed above; Claude Code may also load user rules and parent-folder files that this total leaves out." : "  covers: this folder only; Claude Code may also load your user CLAUDE.md, user rules and parent-folder files that this total leaves out."
+    ws.host === "codex" && pathKey(path17.resolve(ws.root)) === pathKey(path17.resolve(hostConfigDir("codex"))) ? "  covers: your user AGENTS.md, which Codex loads in every session of every project." : ws.host === "codex" ? `  covers: this folder only; the user AGENTS.md under ${hostConfigDir("codex").split(path17.sep).join("/")} loads in every session too (the map counts it): to work on it, run init on that folder.` : isFolder ? "  covers: this folder and the files listed above; Claude Code may also load user rules and parent-folder files that this total leaves out." : "  covers: this folder only; Claude Code may also load your user CLAUDE.md, user rules and parent-folder files that this total leaves out."
   );
   lines.push("");
   return lines.join("\n");
@@ -11434,7 +11543,7 @@ function renderPreviewJson(preview, target, flags) {
 }
 
 // src/surface/version.ts
-var VERSION = "1.4.0";
+var VERSION = "1.4.1";
 
 export {
   SEVERITY_ORDER,
@@ -11480,6 +11589,9 @@ export {
   repoRecordPath,
   readRepoRecord,
   repoRecordedSet,
+  codexProjectRoot,
+  inCodexMemories,
+  codexLoadedFiles,
   PolicyError,
   loadPolicy,
   RULES,
@@ -11508,6 +11620,10 @@ export {
   detectPhase,
   resolveReported,
   discover,
+  codexUserTarget,
+  CODEX_REPORT_RULE,
+  codexReportedFiles,
+  codexUserTargetNote,
   manifestLost,
   readFolderManifest,
   readOldManifestVersion,
