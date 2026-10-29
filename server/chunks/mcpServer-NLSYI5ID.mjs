@@ -86,7 +86,7 @@ import {
   undoCommand,
   undoNoBackupMessage,
   undoRefusal
-} from "./chunk-NMSVLGUS.mjs";
+} from "./chunk-HDB6MPYB.mjs";
 import {
   $ZodObject,
   $ZodType,
@@ -11568,7 +11568,7 @@ var MCP_FINDINGS_PER_RULE = 4;
 var compactJson = (pretty) => JSON.stringify(JSON.parse(pretty));
 var MCP_MAP_FILES_PER_GROUP = 12;
 var BASIC_INSTRUCTIONS = "Call init() first, with loaded from your context for the dev's memory. apply()/undo() return the command to run and the operations; pass content: true only if you cannot run commands. Later, doctor() shows drift.";
-var CODEX_BASIC_INSTRUCTIONS = 'Call init() first, with loaded.files = what Codex showed you: the folder from each "# AGENTS.md instructions for <folder>" header, and "user" for the block with no folder. Never build a path. apply()/undo() return the command to run and the operations. Later, doctor() shows drift.';
+var CODEX_BASIC_INSTRUCTIONS = 'Call init() first, with loaded.files = what Codex showed you: the folder from each "# AGENTS.md instructions for <folder>" header, plus "user" only if Codex also showed a "# AGENTS.md instructions" block with no folder (most setups have none). Never build a path. apply()/undo() return the command to run and the operations. Later, doctor() shows drift.';
 function fullInstructions(allowWrite) {
   const tools = [...SERVE_TOOLS, ...SETUP_TOOLS, ...allowWrite ? WRITE_TOOLS : []];
   const words = ["", "", "", "", "", "Five", "Six"];
@@ -11768,6 +11768,7 @@ function previewHandler(root, options, label, withMap) {
   }) => {
     let loaded = given;
     let reportNote = "";
+    let hostLoaded = [];
     try {
       if (currentHost() === "codex" && (given || withMap)) {
         if (!given) throw new McpTargetError(`init needs what Codex loaded for you. ${CODEX_REPORT_RULE} Then call init again with loaded.`);
@@ -11784,6 +11785,7 @@ function previewHandler(root, options, label, withMap) {
         if (unreported.length > 0) reportNote += `
   Codex also loads ${unreported.map(show).join(", ")} here, which the report left out; check your context for its block
 `;
+        hostLoaded = unreported;
         if (extra.length > 0) reportNote += `
   reported but not loaded by Codex from here: ${extra.map(show).join(", ")}
 `;
@@ -11792,7 +11794,7 @@ function previewHandler(root, options, label, withMap) {
       const memoryDir = memoryDirFor(root, loaded);
       let abs = resolveScanTarget(root, target, label, memoryDir);
       const projectDir = abs;
-      const userTarget = withMap ? codexUserTarget(abs, { reported: reportFor(root, loaded), host: hostName }) : void 0;
+      const userTarget = codexUserTarget(abs, { reported: reportFor(root, loaded), host: hostName });
       if (userTarget) abs = userTarget.dir;
       if (!withMap && !readDiscovery(root) && detectPhase(abs) !== "compiled" && readFolderManifest(abs) === void 0 && readRepoRecord(abs) === void 0) {
         throw new McpTargetError(`run init first: doctor checks memory that init has already looked at, and nothing is recorded for this project or compiled at ${abs.split(path.sep).join("/")}. Call init, with loaded set for the dev's Claude Code memory.`);
@@ -11821,7 +11823,7 @@ function previewHandler(root, options, label, withMap) {
       let savedNote = "";
       if (withMap && !loaded) saveDiscovery(root, void 0, preview.workspace.folderRoot ?? abs);
       if (withMap && loaded) {
-        const where = saveDiscovery(root, { files: loaded.files.map(resolveReported), ...memoryDir ? { memoryDir } : {}, source: "agent" }, preview.workspace.folderRoot ?? abs);
+        const where = saveDiscovery(root, { files: loaded.files.map(resolveReported), ...memoryDir ? { memoryDir } : {}, source: "agent", ...hostLoaded.length > 0 ? { hostLoaded } : {} }, preview.workspace.folderRoot ?? abs);
         savedNote = where ? `
   saved these locations for apply, doctor and undo: ${where.split(path.sep).join("/")}
 ` : "\n  could not save these locations; pass loaded again to apply\n";
@@ -11912,7 +11914,8 @@ function registerApplyTool(server, root, options) {
     },
     async ({ target, budget, force, content, format }) => {
       try {
-        const abs = resolveScanTarget(root, target, "apply target", recordedMemoryDir(root));
+        let abs = resolveScanTarget(root, target, "apply target", recordedMemoryDir(root));
+        abs = codexUserTarget(abs, { host: currentHost() })?.dir ?? abs;
         const workspace = discover(abs, { cwd: root, host: currentHost(), reported: reportFor(root, void 0, abs) });
         if (workspace.shape === "memory-dir" && !workspace.reported) {
           throw new McpTargetError(
@@ -11988,7 +11991,8 @@ function registerUndoTool(server, root, options) {
     },
     async ({ target, force, content, format }) => {
       try {
-        const abs = resolveScanTarget(root, target, "undo target", recordedMemoryDir(root));
+        let abs = resolveScanTarget(root, target, "undo target", recordedMemoryDir(root));
+        abs = codexUserTarget(abs, { host: currentHost() })?.dir ?? abs;
         let folderRoot;
         try {
           const ws = discover(abs, { cwd: root, host: currentHost() });

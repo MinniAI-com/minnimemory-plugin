@@ -17,6 +17,14 @@ function looksLikeCopyName(fileName) {
   if (/[\s._-](old|bak|backup|copy|v\d+)([\s._-]|$)/.test(stem3)) return true;
   return /^old[\s._-]/.test(stem3);
 }
+function rootTopicSources(manifest) {
+  if (manifest.mode !== "folder") return [];
+  const index = manifest.index?.file?.toLowerCase();
+  return manifest.sources.filter(
+    (s) => !s.compiled && ROOT_TOPIC_FILE.test(s.file) && s.file.toLowerCase() !== index && s.file.toLowerCase() !== "readme.md" && !looksLikeCopyName(s.file)
+  );
+}
+var ROOT_TOPIC_FILE = /^[A-Za-z0-9_][A-Za-z0-9_ .()-]*\.md$/;
 function looseOnDemand(manifest) {
   return manifest.sources.filter(
     (s) => !s.compiled && /^OnDemandMemory\/[^/]+\.md$/i.test(s.file) && !looksLikeCopyName(s.file.slice("OnDemandMemory/".length))
@@ -511,8 +519,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path18, errorMaps, issueData } = params;
-  const fullPath = [...path18, ...issueData.path || []];
+  const { data, path: path21, errorMaps, issueData } = params;
+  const fullPath = [...path21, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -628,11 +636,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path18, key2) {
+  constructor(parent, value, path21, key2) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path18;
+    this._path = path21;
     this._key = key2;
   }
   get path() {
@@ -4224,10 +4232,11 @@ var ROUTING_IDS = ["05", "15", "16", "22", "23", "26"];
 function profile(name) {
   if (name === "none") return [];
   if (name === "routing") return INSTRUCTIONS.filter((i) => ROUTING_IDS.includes(i.id));
+  if (name === "output") return INSTRUCTIONS.filter((i) => i.category === "output" && i.defaultOn);
   return INSTRUCTIONS.filter((i) => i.defaultOn);
 }
 function isProfileName(value) {
-  return value === "none" || value === "routing" || value === "full";
+  return value === "none" || value === "routing" || value === "output" || value === "full";
 }
 function defaultProfile() {
   return profile("routing");
@@ -4802,7 +4811,7 @@ function unitsOf(onDemandFile, content) {
   for (const sec of secs) {
     while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= sec.level) stack.pop();
     if (sec.level > 0) stack.push({ level: sec.level, heading: sec.heading });
-    const path18 = stack.map((s) => s.heading);
+    const path21 = stack.map((s) => s.heading);
     const bodyStart = sec.level > 0 ? sec.startLine + 1 : sec.startLine;
     const bodyLines = lines.slice(bodyStart - 1, sec.endLine);
     if (bodyLines.every((l) => l.trim() === "")) continue;
@@ -4813,7 +4822,7 @@ function unitsOf(onDemandFile, content) {
         onDemandFile: onDemandFile.name,
         file: onDemandFile.file,
         heading: sec.heading,
-        path: path18,
+        path: path21,
         kind: "section",
         startLine: sec.startLine,
         endLine: sec.endLine,
@@ -4831,7 +4840,7 @@ function unitsOf(onDemandFile, content) {
         onDemandFile: onDemandFile.name,
         file: onDemandFile.file,
         heading,
-        path: [...path18, heading],
+        path: [...path21, heading],
         kind: "entry",
         startLine: entryStart,
         endLine,
@@ -4847,7 +4856,7 @@ function unitsOf(onDemandFile, content) {
         onDemandFile: onDemandFile.name,
         file: onDemandFile.file,
         heading: sec.heading,
-        path: path18,
+        path: path21,
         kind: "section",
         startLine: sec.startLine,
         endLine: bodyStart - 1 + introEnd,
@@ -5830,15 +5839,15 @@ var MissingOnDemandFile = class extends McpTargetError {
   }
   onDemandFile;
 };
-function loadOnDemandRaw(root, onDemandFile) {
-  if (!ON_DEMAND_FILE.test(onDemandFile)) {
+function loadOnDemandRaw(root, onDemandFile, realRoot) {
+  if (!ON_DEMAND_FILE.test(onDemandFile) && !ROOT_TOPIC_FILE.test(onDemandFile)) {
     throw new McpTargetError(`refusing OnDemandMemory path outside OnDemandMemory/: ${onDemandFile}`);
   }
   const abs = path3.join(root, onDemandFile);
   if (!fs3.existsSync(abs)) throw new MissingOnDemandFile(onDemandFile);
-  const real = fs3.realpathSync(abs);
-  const realRoot = fs3.realpathSync(root);
-  if (!real.startsWith(realRoot + path3.sep)) {
+  const real = fs3.realpathSync.native(abs);
+  const resolvedRoot = realRoot ?? fs3.realpathSync.native(root);
+  if (!real.startsWith(resolvedRoot + path3.sep)) {
     throw new McpTargetError(`refusing OnDemandMemory file that resolves outside the workspace: ${onDemandFile}`);
   }
   const raw = fs3.readFileSync(real, "utf8");
@@ -5862,7 +5871,7 @@ function onDemandFileSignature(root, onDemandFile, manifestHash) {
 }
 function onDemandEntries(manifest) {
   const routed = allRouted(manifest).map((m) => ({ name: m.name, file: m.file, hash: m.hash, triggers: m.triggers, compiled: true }));
-  const loose = looseOnDemand(manifest).map((s) => ({
+  const loose = [...looseOnDemand(manifest), ...rootTopicSources(manifest)].map((s) => ({
     name: path3.basename(s.file).replace(/\.md$/i, ""),
     file: s.file,
     hash: s.hash,
@@ -5877,7 +5886,7 @@ function manifestSignature(root, manifest) {
 }
 function alwaysOnEntries(root, manifest) {
   const files = /* @__PURE__ */ new Set();
-  if (manifest.index?.file) files.add(manifest.index.file);
+  if (manifest.index?.file && manifest.mode !== "folder") files.add(manifest.index.file);
   for (const s of manifest.sources) {
     if (s.compiled && (manifest.mode === "host" || /^AlwaysOnMemory\//i.test(s.file))) files.add(s.file);
   }
@@ -5911,10 +5920,11 @@ function getUnitIndex(root, manifest, withAlwaysOn = false) {
   const drifted = [];
   const missing = [];
   const entries2 = onDemandEntries(manifest);
+  const realRoot = fs3.realpathSync.native(root);
   const units = entries2.flatMap((m) => {
     let loaded;
     try {
-      loaded = loadOnDemandRaw(root, m.file);
+      loaded = loadOnDemandRaw(root, m.file, realRoot);
     } catch (err) {
       if (!(err instanceof MissingOnDemandFile)) throw err;
       missing.push(m.file);
@@ -6327,9 +6337,105 @@ function collapse(s) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-// src/audit/rules.ts
+// src/runtime/usage.ts
+import { createHash as createHash2 } from "node:crypto";
 import fs7 from "node:fs";
 import path6 from "node:path";
+var USAGE_MAX_BYTES = 512 * 1024;
+var USAGE_KEEP_LINES = 4e3;
+function usageLogPath(root) {
+  const key2 = createHash2("sha256").update(pathKey(path6.resolve(root))).digest("hex").slice(0, 16);
+  return path6.join(hostConfigDir(), "minnimemory", "usage", `${key2}.jsonl`);
+}
+function appendUsage(root, event) {
+  try {
+    const file = usageLogPath(root);
+    fs7.mkdirSync(path6.dirname(file), { recursive: true });
+    fs7.appendFileSync(file, `${JSON.stringify({ t: (/* @__PURE__ */ new Date()).toISOString(), ...event })}
+`, "utf8");
+    if (fs7.statSync(file).size > USAGE_MAX_BYTES) {
+      const lines = fs7.readFileSync(file, "utf8").split("\n").filter(Boolean);
+      fs7.writeFileSync(file, `${lines.slice(-USAGE_KEEP_LINES).join("\n")}
+`, "utf8");
+    }
+  } catch {
+  }
+}
+function readUsage(root) {
+  let text2;
+  try {
+    text2 = fs7.readFileSync(usageLogPath(root), "utf8");
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line of text2.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line);
+      if (typeof e.s === "string" && (e.e === "session" || e.e === "read" || e.e === "placed")) out.push(e);
+    } catch {
+    }
+  }
+  return out;
+}
+function summarizeUsage(events) {
+  const sessions = /* @__PURE__ */ new Set();
+  const opened = /* @__PURE__ */ new Map();
+  for (const e of events) {
+    if (e.e === "session") sessions.add(e.s);
+    if (e.e === "read" && e.f) {
+      if (!opened.has(e.f)) opened.set(e.f, /* @__PURE__ */ new Set());
+      opened.get(e.f)?.add(e.s);
+    }
+  }
+  return { sessions: sessions.size, opened: new Map([...opened].map(([f, s]) => [f, s.size])) };
+}
+function onDemandOwner(file) {
+  let dir = path6.dirname(path6.resolve(file));
+  for (let i = 0; i < 4; i++) {
+    if (fs7.existsSync(path6.join(dir, COMPILED_DIR_NAME, "manifest.json"))) {
+      const rel = path6.relative(dir, path6.resolve(file)).split(path6.sep).join("/");
+      return /^(?:\.claude\/)?OnDemandMemory\/[^/]+$/.test(rel) ? { root: dir, rel } : void 0;
+    }
+    const up = path6.dirname(dir);
+    if (up === dir) return void 0;
+    dir = up;
+  }
+  return void 0;
+}
+function parseReadHookInput(raw) {
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return {};
+    const o = obj;
+    const input = o["tool_input"] && typeof o["tool_input"] === "object" ? o["tool_input"] : {};
+    return {
+      sessionId: typeof o["session_id"] === "string" ? o["session_id"] : void 0,
+      cwd: typeof o["cwd"] === "string" ? o["cwd"] : void 0,
+      transcriptPath: typeof o["transcript_path"] === "string" ? o["transcript_path"] : void 0,
+      toolName: typeof o["tool_name"] === "string" ? o["tool_name"] : void 0,
+      filePath: typeof input["file_path"] === "string" ? input["file_path"] : void 0,
+      offset: typeof input["offset"] === "number" ? input["offset"] : void 0,
+      limit: typeof input["limit"] === "number" ? input["limit"] : void 0,
+      response: o["tool_response"]
+    };
+  } catch {
+    return {};
+  }
+}
+function recordRead(input) {
+  if (input.toolName !== "Read" || !input.filePath || !input.sessionId) return;
+  try {
+    const owner = onDemandOwner(input.filePath);
+    if (owner) appendUsage(owner.root, { s: input.sessionId, e: "read", f: owner.rel });
+  } catch {
+  }
+}
+
+// src/audit/rules.ts
+import fs8 from "node:fs";
+import path7 from "node:path";
 
 // src/workspace/claudeIndex.ts
 var CLAUDE_INDEX_MAX_LINES = 200;
@@ -6430,11 +6536,11 @@ function treeRuns(file) {
   return out;
 }
 function duplicatedScripts(file, root) {
-  const pkgPath = path6.join(root, "package.json");
-  if (!fs7.existsSync(pkgPath)) return [];
+  const pkgPath = path7.join(root, "package.json");
+  if (!fs8.existsSync(pkgPath)) return [];
   let names = [];
   try {
-    const pkg = JSON.parse(fs7.readFileSync(pkgPath, "utf8"));
+    const pkg = JSON.parse(fs8.readFileSync(pkgPath, "utf8"));
     names = Object.keys(pkg.scripts ?? {});
   } catch {
     return [];
@@ -6498,8 +6604,8 @@ function referenceIndex(candidates) {
   const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const byName = /* @__PURE__ */ new Map();
   for (const c of candidates) {
-    const stem3 = path6.basename(c.rel).replace(/\.md$/i, "");
-    for (const name of /* @__PURE__ */ new Set([c.rel, path6.basename(c.rel), `[[${stem3}]]`, `[[${stem3}|`])) {
+    const stem3 = path7.basename(c.rel).replace(/\.md$/i, "");
+    for (const name of /* @__PURE__ */ new Set([c.rel, path7.basename(c.rel), `[[${stem3}]]`, `[[${stem3}|`])) {
       const list = byName.get(name);
       if (list) list.push(c);
       else byName.set(name, [c]);
@@ -6782,10 +6888,10 @@ var mm010 = {
     const out = [];
     const remedy = `re-apply with: ${applyCommand(void 0, root)}  (recompiles the always-loaded files, keeps every routed file, rewrites the list and manifest)`;
     const byName = new Map(
-      workspace.files.filter((f) => containedIn(root, f.abs)).map((f) => [path6.basename(f.abs), f])
+      workspace.files.filter((f) => containedIn(root, f.abs)).map((f) => [path7.basename(f.abs), f])
     );
     const check = (file, hash2, verbatim) => {
-      const found = byName.get(path6.basename(file));
+      const found = byName.get(path7.basename(file));
       if (!found) {
         out.push({ rule: "MM010", severity: "med", message: `${file} is in the manifest but missing on disk`, file, hint: remedy });
         return;
@@ -6829,7 +6935,7 @@ var mm010 = {
         message: `${rel} ${MM010_NOT_IMPORTED}`,
         file: rel,
         ...file ? { tokens: file.tokens } : {},
-        hint: `put the import back: a line "@${path6.join(root, rel).split(path6.sep).join("/")}" in the file that imported it (usually the user CLAUDE.md); or move the file to OnDemandMemory/ with a list line in ${manifest.index.file} and re-apply. A re-apply alone does not change this`
+        hint: `put the import back: a line "@${path7.join(root, rel).split(path7.sep).join("/")}" in the file that imported it (usually the user CLAUDE.md); or move the file to OnDemandMemory/ with a list line in ${manifest.index.file} and re-apply. A re-apply alone does not change this`
       });
     }
     return out;
@@ -6900,7 +7006,7 @@ function fileGraphStats(files) {
   const units = [];
   const owner = [];
   for (const file of files) {
-    const name = path6.basename(file.rel).replace(/\.md$/i, "");
+    const name = path7.basename(file.rel).replace(/\.md$/i, "");
     for (const unit of unitsOf({ name, file: file.rel }, file.content)) {
       units.push(unit);
       owner.push(file);
@@ -7013,7 +7119,7 @@ var mm017 = {
 function renamedTwin(deadStem, files) {
   const dead = deadStem.toLowerCase();
   return files.find((f) => {
-    const stem3 = path6.basename(f.rel).replace(/\.md$/i, "").toLowerCase();
+    const stem3 = path7.basename(f.rel).replace(/\.md$/i, "").toLowerCase();
     if (stem3 === dead || !stem3.startsWith(dead)) return false;
     return /^[\s._-]*(\(?old\)?|copy|bak|backup|v?\d+)$/.test(stem3.slice(dead.length));
   });
@@ -7036,9 +7142,9 @@ var mm018 = {
         } catch {
           target = raw;
         }
-        const tries = [path6.resolve(path6.dirname(list.abs), target), path6.resolve(workspace.root, target)];
-        if (tries.some((p) => fs7.existsSync(p))) continue;
-        const twin = renamedTwin(path6.basename(target).replace(/\.md$/i, ""), workspace.files);
+        const tries = [path7.resolve(path7.dirname(list.abs), target), path7.resolve(workspace.root, target)];
+        if (tries.some((p) => fs8.existsSync(p))) continue;
+        const twin = renamedTwin(path7.basename(target).replace(/\.md$/i, ""), workspace.files);
         out.push({
           rule: "MM018",
           severity: "med",
@@ -7071,10 +7177,10 @@ function misroutedListLines(workspace) {
   const list = workspace.onDemandList;
   if (!list) return [];
   const others = workspace.files.filter((f) => f !== list && /\.md$/i.test(f.rel));
-  const text2 = new Map(others.map((f) => [path6.resolve(f.abs), f.content.toLowerCase()]));
+  const text2 = new Map(others.map((f) => [path7.resolve(f.abs), f.content.toLowerCase()]));
   let headingText;
   const headingsOf = (key2) => {
-    headingText ??= new Map(others.map((f) => [path6.resolve(f.abs), text2.get(path6.resolve(f.abs)).split("\n").filter((l) => /^\s*#/.test(l)).join("\n")]));
+    headingText ??= new Map(others.map((f) => [path7.resolve(f.abs), text2.get(path7.resolve(f.abs)).split("\n").filter((l) => /^\s*#/.test(l)).join("\n")]));
     return headingText.get(key2);
   };
   const holders = /* @__PURE__ */ new Map();
@@ -7094,24 +7200,24 @@ function misroutedListLines(workspace) {
     const total = terms.reduce((s, t) => s + weight(t), 0);
     return total === 0 ? 0 : terms.filter((t) => holdersOf(t, inHeadings).has(key2)).reduce((s, t) => s + weight(t), 0) / total;
   };
-  const resolveTarget2 = (written) => {
+  const resolveTarget = (written) => {
     let target = written;
     try {
       target = decodeURI(target);
     } catch {
     }
-    return [path6.resolve(path6.dirname(list.abs), target), path6.resolve(workspace.root, target)].find((p) => text2.has(p));
+    return [path7.resolve(path7.dirname(list.abs), target), path7.resolve(workspace.root, target)].find((p) => text2.has(p));
   };
   const listed = new Set(list.lines.flatMap((line) => {
     const t = listLinkTarget(line);
-    const abs = t === void 0 ? void 0 : resolveTarget2(t);
+    const abs = t === void 0 ? void 0 : resolveTarget(t);
     return abs ? [abs] : [];
   }));
   const out = [];
   list.lines.forEach((line, i) => {
     const linked = listLinkTarget(line);
     if (linked === void 0) return;
-    const abs = resolveTarget2(linked);
+    const abs = resolveTarget(linked);
     if (!abs) return;
     const terms = hookTerms(hookText(line));
     if (terms.length < MM019_MIN_TERMS) return;
@@ -7119,14 +7225,14 @@ function misroutedListLines(workspace) {
     const own = share(terms, abs);
     let best;
     for (const f of others) {
-      const p = path6.resolve(f.abs);
+      const p = path7.resolve(f.abs);
       if (p === abs) continue;
       const s = share(terms, p, text2.get(p).length > MM019_SIZE_RATIO * ownLength);
       if (!best || s > best.share) best = { file: f, share: s };
     }
     if (!best || best.share < MM019_OTHER_SHARE || best.share - own < MM019_GAP) return;
     const plainOwn = terms.filter((t) => holdersOf(t, false).has(abs)).length / terms.length;
-    if (plainOwn >= 0.5 && listed.has(path6.resolve(best.file.abs))) return;
+    if (plainOwn >= 0.5 && listed.has(path7.resolve(best.file.abs))) return;
     out.push({ index: i, linked, linkedAbs: abs, best: best.file, bestShare: best.share, ownShare: own, plainOwn });
   });
   return out;
@@ -7138,7 +7244,7 @@ function swappedListPairs(workspace) {
   for (const a of lines) {
     if (used.has(a.index)) continue;
     const b = lines.find(
-      (x) => !used.has(x.index) && x.index !== a.index && path6.resolve(x.linkedAbs) === path6.resolve(a.best.abs) && path6.resolve(x.best.abs) === path6.resolve(a.linkedAbs)
+      (x) => !used.has(x.index) && x.index !== a.index && path7.resolve(x.linkedAbs) === path7.resolve(a.best.abs) && path7.resolve(x.best.abs) === path7.resolve(a.linkedAbs)
     );
     if (!b) continue;
     used.add(a.index).add(b.index);
@@ -7268,10 +7374,10 @@ var mm022 = {
     const codex = workspace.codex;
     if (workspace.host !== "codex" || !codex) return [];
     const out = [];
-    const show = (abs) => containedIn(workspace.root, abs) ? path6.relative(workspace.root, abs).split(path6.sep).join("/") : abs;
+    const show = (abs) => containedIn(workspace.root, abs) ? path7.relative(workspace.root, abs).split(path7.sep).join("/") : abs;
     const capFrom = codex.capSource === "default" ? "Codex's default" : codex.capSource;
     for (const c of codex.chain.filter((f) => !f.loaded)) {
-      const file = workspace.files.find((f) => f.dropped && path6.resolve(f.abs) === path6.resolve(c.abs));
+      const file = workspace.files.find((f) => f.dropped && path7.resolve(f.abs) === path7.resolve(c.abs));
       out.push({
         rule: "MM022",
         severity: "high",
@@ -7291,7 +7397,7 @@ var mm023 = {
   run({ workspace }) {
     const codex = workspace.codex;
     if (workspace.host !== "codex" || !codex) return [];
-    const show = (abs) => containedIn(workspace.root, abs) ? path6.relative(workspace.root, abs).split(path6.sep).join("/") : abs;
+    const show = (abs) => containedIn(workspace.root, abs) ? path7.relative(workspace.root, abs).split(path7.sep).join("/") : abs;
     return codex.chain.filter((c) => c.shadows !== void 0).map((c) => ({
       rule: "MM023",
       severity: "low",
@@ -7301,22 +7407,53 @@ var mm023 = {
     }));
   }
 };
-var RULES = [mm001, mm002, mm003, mm004, mm005, mm006, mm007, mm008, mm009, mm010, mm014, mm015, mm017, mm018, mm019, mm020, mm021, mm022, mm023];
+var USAGE_MIN_SESSIONS = 10;
+var USAGE_PROMOTE_RATE = 0.8;
+var USAGE_PROMOTE_RATE_SMALL = 0.5;
+var USAGE_SMALL_TOKENS = 400;
+var mm024 = {
+  id: "MM024",
+  severity: "low",
+  title: "an OnDemandMemory file is read in most sessions; always-loaded it would cost less",
+  run({ workspace }) {
+    const root = workspace.folderRoot;
+    if (!root) return [];
+    const usage = summarizeUsage(readUsage(root));
+    if (usage.sessions < USAGE_MIN_SESSIONS) return [];
+    const out = [];
+    for (const [rel, opened] of [...usage.opened].sort((a, b) => b[1] - a[1])) {
+      const file = workspace.files.find((f) => f.kind === "onDemand" && f.rel === rel);
+      if (!file || !file.tokens) continue;
+      const rate = opened / usage.sessions;
+      if (rate < (file.tokens <= USAGE_SMALL_TOKENS ? USAGE_PROMOTE_RATE_SMALL : USAGE_PROMOTE_RATE)) continue;
+      out.push({
+        rule: "MM024",
+        severity: "low",
+        message: `${rel} was read in ${opened} of the last ${usage.sessions} sessions (${Math.round(rate * 100)}%): each Read adds its ${file.tokens.toLocaleString("en-US")} tokens mid-session plus a tool call, while always-loaded text is read from the cache`,
+        file: rel,
+        tokens: file.tokens,
+        hint: "if most sessions need it, move it into AlwaysOnMemory (or import it from the host file); counted from this machine's usage log"
+      });
+    }
+    return out;
+  }
+};
+var RULES = [mm001, mm002, mm003, mm004, mm005, mm006, mm007, mm008, mm009, mm010, mm014, mm015, mm017, mm018, mm019, mm020, mm021, mm022, mm023, mm024];
 
 // src/workspace/folder.ts
-import { createHash as createHash2 } from "node:crypto";
-import fs10 from "node:fs";
+import { createHash as createHash3 } from "node:crypto";
+import fs11 from "node:fs";
 import os3 from "node:os";
-import path9 from "node:path";
+import path10 from "node:path";
 
 // src/workspace/discover.ts
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import os2 from "node:os";
-import path8 from "node:path";
+import path9 from "node:path";
 
 // src/workspace/claudeLoad.ts
-import fs8 from "node:fs";
-import path7 from "node:path";
+import fs9 from "node:fs";
+import path8 from "node:path";
 var CLAUDE_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
 var AGENTS_FILES = ["AGENTS.md", ".claude/AGENTS.md"];
 var SKIP_DIRS = /* @__PURE__ */ new Set([".git", "node_modules", ".minnimemory", "dist", "build", "out", "target", "vendor", ".venv", "venv", "__pycache__", ".next", "coverage"]);
@@ -7324,7 +7461,7 @@ var MAX_WALK_DEPTH = 8;
 var MAX_WALK_DIRS = 5e3;
 function isFile(abs) {
   try {
-    return fs8.statSync(abs).isFile();
+    return fs9.statSync(abs).isFile();
   } catch {
     return false;
   }
@@ -7365,17 +7502,17 @@ function listRuleFiles(rulesDir) {
   const walk = (dir) => {
     let entries2;
     try {
-      entries2 = fs8.readdirSync(dir, { withFileTypes: true });
+      entries2 = fs9.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
-      const abs = path7.join(dir, e.name);
+      const abs = path8.join(dir, e.name);
       if (e.isDirectory()) walk(abs);
       else if (e.isFile() && e.name.toLowerCase().endsWith(".md")) {
         let content = "";
         try {
-          content = fs8.readFileSync(abs, "utf8");
+          content = fs9.readFileSync(abs, "utf8");
         } catch {
         }
         out.push({ abs, globs: ruleGlobs(content) });
@@ -7387,24 +7524,24 @@ function listRuleFiles(rulesDir) {
 }
 function ancestorsRootFirst(cwd) {
   const out = [];
-  const stop = process.env.MINNIMEMORY_ANCESTOR_STOP ? path7.resolve(process.env.MINNIMEMORY_ANCESTOR_STOP).toLowerCase() : void 0;
-  let dir = path7.resolve(cwd);
+  const stop = process.env.MINNIMEMORY_ANCESTOR_STOP ? path8.resolve(process.env.MINNIMEMORY_ANCESTOR_STOP).toLowerCase() : void 0;
+  let dir = path8.resolve(cwd);
   for (; ; ) {
     out.unshift(dir);
-    const parent = path7.dirname(dir);
+    const parent = path8.dirname(dir);
     if (parent === dir || dir.toLowerCase() === stop) break;
     dir = parent;
   }
   return out;
 }
 function agentsMdActive(cwd, excluded = () => false, within) {
-  const userHost = path7.resolve(claudeConfigDir(), "CLAUDE.md").toLowerCase();
-  const bound = within ? path7.resolve(within).toLowerCase() : void 0;
-  const dirs = ancestorsRootFirst(cwd).filter((d) => !bound || d.toLowerCase() === bound || d.toLowerCase().startsWith(bound + path7.sep));
+  const userHost = path8.resolve(claudeConfigDir(), "CLAUDE.md").toLowerCase();
+  const bound = within ? path8.resolve(within).toLowerCase() : void 0;
+  const dirs = ancestorsRootFirst(cwd).filter((d) => !bound || d.toLowerCase() === bound || d.toLowerCase().startsWith(bound + path8.sep));
   return !dirs.some(
     (dir) => CLAUDE_FILES.some((f) => {
-      const abs = path7.join(dir, f);
-      return path7.resolve(abs).toLowerCase() !== userHost && !excluded(abs) && isFile(abs);
+      const abs = path8.join(dir, f);
+      return path8.resolve(abs).toLowerCase() !== userHost && !excluded(abs) && isFile(abs);
     })
   );
 }
@@ -7424,12 +7561,12 @@ function globToRegExp(glob) {
   return new RegExp(`^${re}$`, process.platform === "win32" ? "i" : "");
 }
 function claudeMdExcludes(projectRoot, machine) {
-  const files = [path7.join(projectRoot, ".claude", "settings.json"), path7.join(projectRoot, ".claude", "settings.local.json")];
-  if (machine) files.unshift(path7.join(claudeConfigDir(), "settings.json"));
+  const files = [path8.join(projectRoot, ".claude", "settings.json"), path8.join(projectRoot, ".claude", "settings.local.json")];
+  if (machine) files.unshift(path8.join(claudeConfigDir(), "settings.json"));
   const patterns = [];
   for (const f of files) {
     try {
-      const raw = JSON.parse(fs8.readFileSync(f, "utf8"));
+      const raw = JSON.parse(fs9.readFileSync(f, "utf8"));
       if (Array.isArray(raw.claudeMdExcludes)) {
         for (const p of raw.claudeMdExcludes) if (typeof p === "string" && p) patterns.push(globToRegExp(p));
       }
@@ -7437,48 +7574,48 @@ function claudeMdExcludes(projectRoot, machine) {
     }
   }
   return (abs) => {
-    const p = path7.resolve(abs).split(path7.sep).join("/");
+    const p = path8.resolve(abs).split(path8.sep).join("/");
     return patterns.some((re) => re.test(p));
   };
 }
 function claudeLoadedFiles(cwd, options) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
-  const root = path7.resolve(options.projectRoot ?? cwd);
+  const root = path8.resolve(options.projectRoot ?? cwd);
   const excluded = claudeMdExcludes(root, options.machine);
   const add = (f) => {
-    const key2 = path7.resolve(f.abs).toLowerCase();
+    const key2 = path8.resolve(f.abs).toLowerCase();
     if (seen.has(key2) || !isFile(f.abs)) return;
     if (f.owner !== "managed" && excluded(f.abs)) return;
     seen.add(key2);
     out.push(f);
   };
-  const inProject = (dir) => dir.toLowerCase() === root.toLowerCase() || dir.toLowerCase().startsWith(root.toLowerCase() + path7.sep);
+  const inProject = (dir) => dir.toLowerCase() === root.toLowerCase() || dir.toLowerCase().startsWith(root.toLowerCase() + path8.sep);
   const notLoaded = options.report?.agentsNotLoaded;
   const passOver = (dir) => {
     if (!notLoaded || !inProject(dir)) return;
-    const beside = CLAUDE_FILES.find((f) => isFile(path7.join(dir, f)) && !excluded(path7.join(dir, f)));
+    const beside = CLAUDE_FILES.find((f) => isFile(path8.join(dir, f)) && !excluded(path8.join(dir, f)));
     for (const f of AGENTS_FILES) {
-      const abs = path7.join(dir, f);
+      const abs = path8.join(dir, f);
       if (isFile(abs) && !excluded(abs) && !notLoaded.some((n) => n.abs === abs)) notLoaded.push({ abs, dir, beside });
     }
   };
   if (options.machine) {
     add({ abs: managedPolicyPath(), owner: "managed", when: "session" });
     const config = claudeConfigDir();
-    add({ abs: path7.join(config, "CLAUDE.md"), owner: "user", when: "session" });
-    for (const r of listRuleFiles(path7.join(config, "rules"))) {
+    add({ abs: path8.join(config, "CLAUDE.md"), owner: "user", when: "session" });
+    for (const r of listRuleFiles(path8.join(config, "rules"))) {
       add({ abs: r.abs, owner: "user", when: r.globs.length ? "path-rule" : "session", trigger: r.globs.join(", ") || void 0 });
     }
   }
   const agents = agentsMdActive(cwd, excluded, options.machine ? void 0 : root);
   for (const dir of ancestorsRootFirst(cwd)) {
     if (!options.machine && !inProject(dir)) continue;
-    for (const f of CLAUDE_FILES) add({ abs: path7.join(dir, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "session" });
-    if (agents) for (const f of AGENTS_FILES) add({ abs: path7.join(dir, f), owner: "project", when: "session" });
+    for (const f of CLAUDE_FILES) add({ abs: path8.join(dir, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "session" });
+    if (agents) for (const f of AGENTS_FILES) add({ abs: path8.join(dir, f), owner: "project", when: "session" });
     else passOver(dir);
   }
-  for (const r of listRuleFiles(path7.join(path7.resolve(cwd), ".claude", "rules"))) {
+  for (const r of listRuleFiles(path8.join(path8.resolve(cwd), ".claude", "rules"))) {
     add({ abs: r.abs, owner: "project", when: r.globs.length ? "path-rule" : "session", trigger: r.globs.join(", ") || void 0 });
   }
   if (options.subfolders === false) return out;
@@ -7490,25 +7627,25 @@ function claudeLoadedFiles(cwd, options) {
     }
     let entries2;
     try {
-      entries2 = fs8.readdirSync(dir, { withFileTypes: true });
+      entries2 = fs9.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries2.sort((a, b) => a.name.localeCompare(b.name))) {
       if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith(".")) continue;
       dirs++;
-      const sub = path7.join(dir, e.name);
-      const hasClaude = CLAUDE_FILES.some((f) => isFile(path7.join(sub, f)));
-      for (const f of CLAUDE_FILES) add({ abs: path7.join(sub, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "subfolder", trigger: sub });
-      if (agents && !hasClaude) for (const f of AGENTS_FILES) add({ abs: path7.join(sub, f), owner: "project", when: "subfolder", trigger: sub });
+      const sub = path8.join(dir, e.name);
+      const hasClaude = CLAUDE_FILES.some((f) => isFile(path8.join(sub, f)));
+      for (const f of CLAUDE_FILES) add({ abs: path8.join(sub, f), owner: f === "CLAUDE.local.md" ? "local" : "project", when: "subfolder", trigger: sub });
+      if (agents && !hasClaude) for (const f of AGENTS_FILES) add({ abs: path8.join(sub, f), owner: "project", when: "subfolder", trigger: sub });
       else passOver(sub);
-      for (const r of listRuleFiles(path7.join(sub, ".claude", "rules"))) {
+      for (const r of listRuleFiles(path8.join(sub, ".claude", "rules"))) {
         add({ abs: r.abs, owner: "project", when: r.globs.length ? "path-rule" : "subfolder", trigger: r.globs.join(", ") || sub });
       }
       walk(sub, depth + 1);
     }
   };
-  walk(path7.resolve(cwd), 1);
+  walk(path8.resolve(cwd), 1);
   return out;
 }
 
@@ -7522,22 +7659,22 @@ var COMPILED_DIR2 = COMPILED_DIR_NAME;
 var DiscoveryError = class extends Error {
 };
 function compiledWorkspaceOwns(fileAbs) {
-  const manifest = readFolderManifest(path8.dirname(fileAbs));
+  const manifest = readFolderManifest(path9.dirname(fileAbs));
   if (!manifest) return false;
-  const base = path8.basename(fileAbs);
+  const base = path9.basename(fileAbs);
   const index = manifest.index?.file;
   const sources = manifest.sources ?? [];
   return index === base || sources.some((src) => src.file === base || src.origin === base);
 }
 function toRel(root, abs) {
-  return path8.relative(root, abs).split(path8.sep).join("/");
+  return path9.relative(root, abs).split(path9.sep).join("/");
 }
 function readFile(root, abs, kind, alwaysLoadedFlag, generated = false) {
-  const raw = fs9.readFileSync(abs);
+  const raw = fs10.readFileSync(abs);
   const content = raw.toString("utf8");
   return {
     abs,
-    rel: toRel(root, abs) || path8.basename(abs),
+    rel: toRel(root, abs) || path9.basename(abs),
     content,
     lines: content.split(/\r?\n/),
     tokens: estimateTokens(content),
@@ -7553,31 +7690,31 @@ function isValidUtf8(raw, decoded) {
 function isUtf16(abs) {
   let fd;
   try {
-    fd = fs9.openSync(abs, "r");
+    fd = fs10.openSync(abs, "r");
     const head = Buffer.alloc(2);
-    if (fs9.readSync(fd, head, 0, 2, 0) < 2) return false;
+    if (fs10.readSync(fd, head, 0, 2, 0) < 2) return false;
     return head[0] === 255 && head[1] === 254 || head[0] === 254 && head[1] === 255;
   } catch {
     return false;
   } finally {
-    if (fd !== void 0) fs9.closeSync(fd);
+    if (fd !== void 0) fs10.closeSync(fd);
   }
 }
 function listMarkdown(dir) {
   let entries2;
   try {
-    entries2 = fs9.readdirSync(dir, { withFileTypes: true });
+    entries2 = fs10.readdirSync(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  return entries2.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md") && !isAppleDouble(e.name)).map((e) => path8.join(dir, e.name)).sort();
+  return entries2.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md") && !isAppleDouble(e.name)).map((e) => path9.join(dir, e.name)).sort();
 }
 function readAlwaysLoadedExtras(root, already) {
-  const have = new Set(already.map((f) => path8.resolve(f.abs).toLowerCase()));
+  const have = new Set(already.map((f) => path9.resolve(f.abs).toLowerCase()));
   const out = [];
   for (const f of claudeLoadedFiles(root, { machine: false, projectRoot: root, subfolders: false })) {
     if (f.when !== "session" || !containedIn(root, f.abs)) continue;
-    const key2 = path8.resolve(f.abs).toLowerCase();
+    const key2 = path9.resolve(f.abs).toLowerCase();
     if (have.has(key2)) continue;
     have.add(key2);
     try {
@@ -7591,13 +7728,13 @@ function readAlwaysLoadedExtras(root, already) {
 function codexExtras(root, cwd, already) {
   const configDir = hostConfigDir("codex");
   const config = readCodexConfig(configDir, root);
-  const leaf = cwd && containedIn(root, cwd) ? path8.resolve(cwd) : root;
+  const leaf = cwd && containedIn(root, cwd) ? path9.resolve(cwd) : root;
   const chain = codexLoadedFiles(leaf, { projectRoot: root, configDir, config });
-  const have = new Map(already.map((f) => [pathKey(path8.resolve(f.abs)), f]));
+  const have = new Map(already.map((f) => [pathKey(path9.resolve(f.abs)), f]));
   const files = [];
   for (const c of chain) {
     if (c.layer !== "project" || !containedIn(root, c.abs)) continue;
-    const key2 = pathKey(path8.resolve(c.abs));
+    const key2 = pathKey(path9.resolve(c.abs));
     const known = have.get(key2);
     if (known) {
       if (!c.loaded) known.dropped = true;
@@ -7617,15 +7754,15 @@ function codexExtras(root, cwd, already) {
 function listOnDemandFiles(dir) {
   let entries2;
   try {
-    entries2 = fs9.readdirSync(dir, { withFileTypes: true });
+    entries2 = fs10.readdirSync(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  return entries2.filter((e) => e.isFile() && /\.(md|json)$/i.test(e.name)).map((e) => path8.join(dir, e.name)).sort();
+  return entries2.filter((e) => e.isFile() && /\.(md|json)$/i.test(e.name)).map((e) => path9.join(dir, e.name)).sort();
 }
 function isPlainFile(abs) {
   try {
-    return fs9.lstatSync(abs).isFile();
+    return fs10.lstatSync(abs).isFile();
   } catch {
     return false;
   }
@@ -7640,10 +7777,10 @@ function looksLikeMemoryDir(root) {
 }
 function detectPhase(root) {
   try {
-    const compiledDir = path8.join(root, COMPILED_DIR2);
-    if (fs9.existsSync(compiledDir) && fs9.statSync(compiledDir).isDirectory()) {
-      const manifestPath = path8.join(compiledDir, "manifest.json");
-      return fs9.existsSync(manifestPath) && fs9.statSync(manifestPath).isFile() ? "compiled" : "setup";
+    const compiledDir = path9.join(root, COMPILED_DIR2);
+    if (fs10.existsSync(compiledDir) && fs10.statSync(compiledDir).isDirectory()) {
+      const manifestPath = path9.join(compiledDir, "manifest.json");
+      return fs10.existsSync(manifestPath) && fs10.statSync(manifestPath).isFile() ? "compiled" : "setup";
     }
     return looksLikeMemoryDir(root) ? "memory-dir" : "setup";
   } catch {
@@ -7652,11 +7789,11 @@ function detectPhase(root) {
 }
 function findHostFile(dir, host = currentHost()) {
   for (const name of hostFilesFor(host)) {
-    const candidate = path8.join(dir, name);
+    const candidate = path9.join(dir, name);
     if (isPlainFile(candidate)) return candidate;
     let link = false;
     try {
-      link = fs9.lstatSync(candidate).isSymbolicLink();
+      link = fs10.lstatSync(candidate).isSymbolicLink();
     } catch {
       link = false;
     }
@@ -7690,7 +7827,7 @@ function resolveImports(hostAbs, root, followExternal = false) {
     if (depth > MAX_IMPORT_DEPTH) return;
     let content;
     try {
-      content = fs9.readFileSync(abs, "utf8");
+      content = fs10.readFileSync(abs, "utf8");
     } catch {
       return;
     }
@@ -7699,14 +7836,14 @@ function resolveImports(hostAbs, root, followExternal = false) {
     let m;
     while ((m = re.exec(text2)) !== null) {
       const raw = m[1] ?? "";
-      const target = raw.startsWith("~/") ? path8.join(os2.homedir(), raw.slice(2)) : path8.resolve(path8.dirname(abs), raw);
+      const target = raw.startsWith("~/") ? path9.join(os2.homedir(), raw.slice(2)) : path9.resolve(path9.dirname(abs), raw);
       if (seen.has(target) || target === hostAbs) continue;
       if (!followExternal && (!underPath(root, target, true) || !containedIn(root, target))) {
         seen.add(target);
         if (!skipped.includes(`@${raw}`)) skipped.push(`@${raw}`);
         continue;
       }
-      if (!fs9.existsSync(target) || !fs9.statSync(target).isFile()) continue;
+      if (!fs10.existsSync(target) || !fs10.statSync(target).isFile()) continue;
       seen.add(target);
       files.push(followExternal ? target : asTyped(root, target));
       visit(target, depth + 1);
@@ -7722,24 +7859,24 @@ function pointerTargetOf(hostAbs, content) {
   const line = meaningful[meaningful.length - 1] ?? "";
   const m = /(?:^|[\s`@])([\p{L}\p{M}\p{N}_.\-]+\.md)(?![\p{L}\p{M}\p{N}_])/iu.exec(line);
   if (!m?.[1]) return void 0;
-  const target = path8.join(path8.dirname(hostAbs), m[1]);
-  if (path8.resolve(target) === path8.resolve(hostAbs)) return void 0;
-  if (!fs9.existsSync(target) || !fs9.statSync(target).isFile()) return void 0;
+  const target = path9.join(path9.dirname(hostAbs), m[1]);
+  if (path9.resolve(target) === path9.resolve(hostAbs)) return void 0;
+  if (!fs10.existsSync(target) || !fs10.statSync(target).isFile()) return void 0;
   return target;
 }
 function readHostWithImports(root, hostAbs, followExternal = false) {
   const host = readFile(root, hostAbs, "host", true);
   const files = [host];
-  const included = /* @__PURE__ */ new Set([path8.resolve(hostAbs)]);
+  const included = /* @__PURE__ */ new Set([path9.resolve(hostAbs)]);
   const { files: imported, skipped: skippedImports } = resolveImports(hostAbs, root, followExternal);
   for (const abs of imported) {
-    if (included.has(path8.resolve(abs))) continue;
-    included.add(path8.resolve(abs));
+    if (included.has(path9.resolve(abs))) continue;
+    included.add(path9.resolve(abs));
     files.push(readFile(root, abs, "import", true));
   }
   const pointer = pointerTargetOf(hostAbs, host.content);
   let pointerTarget;
-  if (pointer && !included.has(path8.resolve(pointer))) {
+  if (pointer && !included.has(path9.resolve(pointer))) {
     files.push(readFile(root, pointer, "import", true));
     pointerTarget = toRel(root, pointer);
   } else if (pointer) {
@@ -7749,12 +7886,12 @@ function readHostWithImports(root, hostAbs, followExternal = false) {
 }
 function isMemoryFolder(root, markdown, reportedMemoryDir) {
   if (markdown.length >= 3) return true;
-  const named = reportedMemoryDir !== void 0 && pathKey(path8.resolve(reportedMemoryDir)) === pathKey(path8.resolve(root));
-  return markdown.length === 2 && markdown.some((f) => path8.basename(f) === "MEMORY.md") && (named || isClaudeMemoryFolder(root));
+  const named = reportedMemoryDir !== void 0 && pathKey(path9.resolve(reportedMemoryDir)) === pathKey(path9.resolve(root));
+  return markdown.length === 2 && markdown.some((f) => path9.basename(f) === "MEMORY.md") && (named || isClaudeMemoryFolder(root));
 }
 function findListFile(files) {
   for (const name of LIST_FILE_NAMES) {
-    const hit = files.find((f) => path8.basename(f) === name);
+    const hit = files.find((f) => path9.basename(f) === name);
     if (hit) return hit;
   }
   return void 0;
@@ -7762,8 +7899,8 @@ function findListFile(files) {
 function findGitRoot(start) {
   let dir = start;
   for (; ; ) {
-    if (fs9.existsSync(path8.join(dir, ".git"))) return dir;
-    const parent = path8.dirname(dir);
+    if (fs10.existsSync(path9.join(dir, ".git"))) return dir;
+    const parent = path9.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -7772,22 +7909,22 @@ function projectKeyRoot(start) {
   const root = findGitRoot(start);
   if (!root) return start;
   try {
-    const dotGit = path8.join(root, ".git");
-    if (!fs9.statSync(dotGit).isFile()) return root;
-    const gitdir = /^gitdir:\s*(.+)$/m.exec(fs9.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    const dotGit = path9.join(root, ".git");
+    if (!fs10.statSync(dotGit).isFile()) return root;
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(fs10.readFileSync(dotGit, "utf8"))?.[1]?.trim();
     if (!gitdir) return root;
-    const worktreeGitDir = path8.resolve(root, gitdir);
-    const common = path8.resolve(worktreeGitDir, fs9.readFileSync(path8.join(worktreeGitDir, "commondir"), "utf8").trim());
-    return path8.basename(common) === ".git" ? path8.dirname(common) : root;
+    const worktreeGitDir = path9.resolve(root, gitdir);
+    const common = path9.resolve(worktreeGitDir, fs10.readFileSync(path9.join(worktreeGitDir, "commondir"), "utf8").trim());
+    return path9.basename(common) === ".git" ? path9.dirname(common) : root;
   } catch {
     return root;
   }
 }
 function projectKeyRoots(target) {
-  const abs = path8.resolve(target);
+  const abs = path9.resolve(target);
   let real = abs;
   try {
-    real = fs9.realpathSync(abs);
+    real = fs10.realpathSync(abs);
   } catch {
   }
   const roots = [projectKeyRoot(real)];
@@ -7799,21 +7936,21 @@ function claudeProjectSlug(absPath) {
   return absPath.replace(/[^a-zA-Z0-9]/g, "-");
 }
 function expandHome(p) {
-  return p.startsWith("~/") || p === "~" ? path8.join(os2.homedir(), p.slice(1)) : p;
+  return p.startsWith("~/") || p === "~" ? path9.join(os2.homedir(), p.slice(1)) : p;
 }
 function resolveReported(p) {
-  const abs = path8.resolve(expandHome(p));
+  const abs = path9.resolve(expandHome(p));
   const home = os2.homedir();
   const homeKey = pathKey(home);
   const key2 = pathKey(abs);
   if (key2 === homeKey) return home;
-  if (!key2.startsWith(homeKey + path8.sep)) return abs;
-  return path8.join(home, ...abs.split(path8.sep).slice(home.split(path8.sep).length));
+  if (!key2.startsWith(homeKey + path9.sep)) return abs;
+  return path9.join(home, ...abs.split(path9.sep).slice(home.split(path9.sep).length));
 }
 function readJsonKey(settingsPath, key2) {
   try {
-    if (!fs9.statSync(settingsPath).isFile()) return void 0;
-    const data = JSON.parse(fs9.readFileSync(settingsPath, "utf8"));
+    if (!fs10.statSync(settingsPath).isFile()) return void 0;
+    const data = JSON.parse(fs10.readFileSync(settingsPath, "utf8"));
     if (data && typeof data === "object") {
       const value = data[key2];
       if (typeof value === "string" && value.length > 0) return value;
@@ -7823,36 +7960,36 @@ function readJsonKey(settingsPath, key2) {
   return void 0;
 }
 function readAutoMemoryDirectorySetting() {
-  return readJsonKey(path8.join(claudeConfigDir(), "settings.json"), "autoMemoryDirectory");
+  return readJsonKey(path9.join(claudeConfigDir(), "settings.json"), "autoMemoryDirectory");
 }
 function discover(target, options = {}) {
-  const abs = path8.resolve(target);
-  if (!fs9.existsSync(abs)) {
+  const abs = path9.resolve(target);
+  if (!fs10.existsSync(abs)) {
     throw new DiscoveryError(`no such file or directory: ${abs}`);
   }
-  const stat = fs9.statSync(abs);
+  const stat = fs10.statSync(abs);
   const given = reportedFrom(options);
   const hostName = options.host ?? currentHost();
   if (stat.isFile() && !compiledWorkspaceOwns(abs)) {
     let isLink = false;
     try {
-      isLink = fs9.lstatSync(abs).isSymbolicLink();
+      isLink = fs10.lstatSync(abs).isSymbolicLink();
     } catch {
       isLink = false;
     }
     if (isLink) {
       throw new DiscoveryError(
-        `${path8.basename(abs)} in ${path8.dirname(abs)} is a symlink; refusing to follow it
+        `${path9.basename(abs)} in ${path9.dirname(abs)} is a symlink; refusing to follow it
   a cloned repo can point a memory file at anything on your machine`
       );
     }
-    const root2 = path8.dirname(abs);
+    const root2 = path9.dirname(abs);
     const { files, pointerTarget, skippedImports } = readHostWithImports(root2, abs);
     return { root: root2, shape: "single-file", files, pointerTarget, skippedImports, ...reportAgainstRoot(root2, files, given) };
   }
-  const root = stat.isFile() ? path8.dirname(abs) : abs;
-  const compiledDir = path8.join(root, COMPILED_DIR2);
-  if (fs9.existsSync(compiledDir) && fs9.statSync(compiledDir).isDirectory()) {
+  const root = stat.isFile() ? path9.dirname(abs) : abs;
+  const compiledDir = path9.join(root, COMPILED_DIR2);
+  if (fs10.existsSync(compiledDir) && fs10.statSync(compiledDir).isDirectory()) {
     const manifest = readFolderManifest(root);
     if (manifest?.mode === "folder") {
       return readCompiledFolder(root, manifest, options);
@@ -7903,18 +8040,18 @@ function codexUserTarget(folder, options = {}) {
   const dir = hostConfigDir("codex");
   const user = codexUserHostFile(dir);
   if (!user) return void 0;
-  const abs = path8.resolve(folder);
-  if (pathKey(abs) === pathKey(path8.resolve(dir))) return void 0;
+  const abs = path9.resolve(folder);
+  if (pathKey(abs) === pathKey(path9.resolve(dir))) return void 0;
   try {
     discover(abs, { host: "codex" });
     return void 0;
   } catch (err) {
     if (!(err instanceof DiscoveryError)) return void 0;
   }
-  const reported = (options.reported?.files ?? []).some((f) => pathKey(path8.resolve(f)) === pathKey(path8.resolve(user.abs)));
+  const reported = (options.reported?.files ?? []).some((f) => pathKey(path9.resolve(f)) === pathKey(path9.resolve(user.abs)));
   return { dir, file: user.abs, reported };
 }
-var CODEX_REPORT_RULE = 'Set loaded.files to exactly what Codex showed you, never a path you build: the folder from each "# AGENTS.md instructions for <folder>" header, and "user" for the "# AGENTS.md instructions" block with no folder ([] if Codex showed none).';
+var CODEX_REPORT_RULE = 'Set loaded.files to exactly what Codex showed you, never a path you build: the folder from each "# AGENTS.md instructions for <folder>" header, plus "user" only if Codex also showed a "# AGENTS.md instructions" block with no folder (most setups have none; [] if Codex showed no block at all).';
 function codexReportedFiles(entries2, configDir = hostConfigDir("codex")) {
   const files = [];
   const bad = [];
@@ -7926,13 +8063,13 @@ function codexReportedFiles(entries2, configDir = hostConfigDir("codex")) {
       if (u) {
         files.push(u.abs);
         user = true;
-      } else bad.push(`user (no AGENTS.md in ${configDir.split(path8.sep).join("/")}, the CODEX_HOME this server was given)`);
+      } else bad.push(`user (no AGENTS.md in ${configDir.split(path9.sep).join("/")}, the CODEX_HOME this server was given)`);
       continue;
     }
     const abs = resolveReported(entry);
     let st;
     try {
-      st = fs9.statSync(abs);
+      st = fs10.statSync(abs);
     } catch {
       st = void 0;
     }
@@ -7946,7 +8083,7 @@ function codexReportedFiles(entries2, configDir = hostConfigDir("codex")) {
   return { files: [...new Set(files)], user, bad };
 }
 function codexUserTargetNote(folder, t) {
-  return `${path8.resolve(folder)} has no AGENTS.md of its own; Codex loads your user file ${t.file.split(path8.sep).join("/")} in every session${t.reported ? " (as the agent reported)" : ""}, so that is the file this works on.`;
+  return `${path9.resolve(folder)} has no AGENTS.md of its own; Codex loads your user file ${t.file.split(path9.sep).join("/")} in every session${t.reported ? " (as the agent reported)" : ""}, so that is the file this works on.`;
 }
 function readCompiledHost(root, manifest, hostName = currentHost(), cwd) {
   const files = [];
@@ -7968,11 +8105,11 @@ function readCompiledHost(root, manifest, hostName = currentHost(), cwd) {
     pointerTarget = hostRead.pointerTarget;
     hostChange = hostChangeOf(root, manifest, toRel(root, hostPath), hostRead);
     const indexRel = manifest?.mode === "host" ? manifest.index.file : void 0;
-    if (indexRel && path8.resolve(path8.join(root, indexRel)) !== path8.resolve(hostPath) && fs9.existsSync(path8.join(root, indexRel))) {
+    if (indexRel && path9.resolve(path9.join(root, indexRel)) !== path9.resolve(hostPath) && fs10.existsSync(path9.join(root, indexRel))) {
       pointerTarget = indexRel;
-      if (!hostRead.files.some((f) => toRel(root, f.abs) === indexRel)) files.push(readFile(root, path8.join(root, indexRel), "import", false));
+      if (!hostRead.files.some((f) => toRel(root, f.abs) === indexRel)) files.push(readFile(root, path9.join(root, indexRel), "import", false));
     }
-    const found = hostRead.files.find((f) => path8.resolve(f.abs) === path8.resolve(hostPath));
+    const found = hostRead.files.find((f) => path9.resolve(f.abs) === path9.resolve(hostPath));
     const hostFile = (pointerTarget ? hostRead.files.find((f) => toRel(root, f.abs) === pointerTarget) : void 0) ?? found;
     if (hostFile) {
       const listLines = regionOnly(hostFile.lines, LIST_START, LIST_END);
@@ -7991,7 +8128,7 @@ function readCompiledHost(root, manifest, hostName = currentHost(), cwd) {
       }
     }
   }
-  const routedDirAbs = path8.join(root, manifest?.routedDir ?? (path8.basename(root) === ".claude" ? "OnDemandMemory" : ".claude/OnDemandMemory"));
+  const routedDirAbs = path9.join(root, manifest?.routedDir ?? (path9.basename(root) === ".claude" ? "OnDemandMemory" : ".claude/OnDemandMemory"));
   for (const m of listOnDemandFiles(routedDirAbs)) files.push(readFile(root, m, "onDemand", false));
   return { root, shape: "compiled", files, onDemandList, manifest, skippedImports, folderRoot: root, pointerTarget, hostChange, ...hostName === "codex" ? { host: hostName, codex } : {} };
 }
@@ -8003,7 +8140,7 @@ function hostChangeOf(root, manifest, hostRel, hostRead) {
   const compiledRel = manifest.index.file;
   const nowRel = hostRead.pointerTarget ?? hostRel;
   if (nowRel === compiledRel) return void 0;
-  const compiledExists = isPlainFile(path8.join(root, compiledRel));
+  const compiledExists = isPlainFile(path9.join(root, compiledRel));
   const now = hostRead.files.find((f) => toRel(root, f.abs) === nowRel);
   const carriesList = now !== void 0 && now.content.includes(LIST_START);
   if (carriesList && (!compiledExists || compiledRel === hostRel && hostRead.pointerTarget === nowRel)) {
@@ -8018,7 +8155,7 @@ function readCompiledFolder(folderRoot, manifest, options) {
   const files = [];
   const routedByFile = new Map(manifest.sources.flatMap((s) => s.routed.map((r) => [r.file, r])));
   for (const dirName of [ALWAYS_ON_DIR_NAME, ON_DEMAND_DIR_NAME]) {
-    for (const abs of listMarkdown(path8.join(folderRoot, dirName))) {
+    for (const abs of listMarkdown(path9.join(folderRoot, dirName))) {
       const rel = toRel(folderRoot, abs);
       const routed = routedByFile.get(rel);
       const alwaysLoadedFlag = dirName === ALWAYS_ON_DIR_NAME;
@@ -8026,18 +8163,18 @@ function readCompiledFolder(folderRoot, manifest, options) {
       files.push(readFile(folderRoot, abs, kind, alwaysLoadedFlag));
     }
   }
-  const indexAbs = path8.join(folderRoot, manifest.index.file);
+  const indexAbs = path9.join(folderRoot, manifest.index.file);
   let index;
-  if (fs9.existsSync(indexAbs)) {
+  if (fs10.existsSync(indexAbs)) {
     index = readFile(folderRoot, indexAbs, "onDemandList", true);
     files.push(index);
   }
   for (const abs of listMarkdown(folderRoot)) {
-    if (index && path8.resolve(abs) === path8.resolve(indexAbs)) continue;
+    if (index && path9.resolve(abs) === path9.resolve(indexAbs)) continue;
     files.push(readFile(folderRoot, abs, "loose", false));
   }
   const { imported, loadersKnown, ...links } = linkHosts(files, folderRoot, options);
-  const alwaysOnNotImported = loadersKnown ? files.filter((f) => f.kind !== "onDemandList" && underPath(path8.join(folderRoot, ALWAYS_ON_DIR_NAME), f.abs) && !imported.has(fold(f.abs))).map((f) => toRel(folderRoot, f.abs)).sort() : [];
+  const alwaysOnNotImported = loadersKnown ? files.filter((f) => f.kind !== "onDemandList" && underPath(path9.join(folderRoot, ALWAYS_ON_DIR_NAME), f.abs) && !imported.has(fold(f.abs))).map((f) => toRel(folderRoot, f.abs)).sort() : [];
   return {
     root: folderRoot,
     shape: "memory-dir",
@@ -8054,24 +8191,24 @@ function noMemoryMessage(abs, host) {
     const dir = hostConfigDir("codex");
     const memories = codexMemoriesDir(dir);
     return `no memory files found in ${abs}
-  Codex loads ${CODEX_HOST_FILES.join(" or ")} from ${dir.split(path8.sep).join("/")} and from each folder from the repo root down to here; there is none.
-` + (memories ? `  Codex's own memories (${memories.files} file(s) in ${memories.abs.split(path8.sep).join("/")}) are generated by Codex and are not compiled; Codex keeps them itself.` : `  write an AGENTS.md here (or in ${dir.split(path8.sep).join("/")} for every project), then run init again`);
+  Codex loads ${CODEX_HOST_FILES.join(" or ")} from ${dir.split(path9.sep).join("/")} and from each folder from the repo root down to here; there is none.
+` + (memories ? `  Codex's own memories (${memories.files} file(s) in ${memories.abs.split(path9.sep).join("/")}) are generated by Codex and are not compiled; Codex keeps them itself.` : `  write an AGENTS.md here (or in ${dir.split(path9.sep).join("/")} for every project), then run init again`);
   }
   return `no memory files found in ${abs}
   looked for: ${HOST_FILES.join(", ")}, a ${COMPILED_DIR2}/ directory, or a directory holding at least 3 markdown files (2 in a Claude Code memory folder with its MEMORY.md)
   only this folder and the folders below it are read; to audit a Claude Code memory folder, name it`;
 }
 function manifestLost(root) {
-  const dir = path8.join(root, COMPILED_DIR2);
-  if (fs9.existsSync(path8.join(dir, "manifest.json"))) return true;
+  const dir = path9.join(root, COMPILED_DIR2);
+  if (fs10.existsSync(path9.join(dir, "manifest.json"))) return true;
   try {
-    return fs9.readdirSync(path8.join(dir, "original")).length > 0 && !backupsMatchDisk(root);
+    return fs10.readdirSync(path9.join(dir, "original")).length > 0 && !backupsMatchDisk(root);
   } catch {
     return false;
   }
 }
 function otherBranchBackups(root) {
-  if (fs9.existsSync(path8.join(root, COMPILED_DIR2, "manifest.json"))) return false;
+  if (fs10.existsSync(path9.join(root, COMPILED_DIR2, "manifest.json"))) return false;
   try {
     return backupsMatchDisk(root);
   } catch {
@@ -8080,11 +8217,11 @@ function otherBranchBackups(root) {
 }
 var OTHER_BRANCH_BACKUPS = "apply refused: .minnimemory/original/ holds the backups of an apply made on another branch (its manifest.json is committed there, not on this checkout). Both branches would share one set of backups, so undo on one would take them from the other. Undo on that branch first, or merge it, then apply here. Nothing was changed.";
 function backupsMatchDisk(root) {
-  const originalDir = path8.join(root, COMPILED_DIR2, "original");
+  const originalDir = path9.join(root, COMPILED_DIR2, "original");
   const backups = [];
   const walk = (d) => {
-    for (const e of fs9.readdirSync(d, { withFileTypes: true })) {
-      const abs = path8.join(d, e.name);
+    for (const e of fs10.readdirSync(d, { withFileTypes: true })) {
+      const abs = path9.join(d, e.name);
       if (e.isDirectory()) walk(abs);
       else backups.push(abs);
     }
@@ -8092,9 +8229,9 @@ function backupsMatchDisk(root) {
   walk(originalDir);
   return backups.length > 0 && backups.every((bak) => {
     if (!bak.endsWith(".bak")) return false;
-    const current2 = path8.join(root, path8.relative(originalDir, bak).slice(0, -".bak".length));
+    const current2 = path9.join(root, path9.relative(originalDir, bak).slice(0, -".bak".length));
     try {
-      const text2 = (f) => fs9.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+      const text2 = (f) => fs10.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
       return text2(bak) === text2(current2);
     } catch {
       return false;
@@ -8102,10 +8239,10 @@ function backupsMatchDisk(root) {
   });
 }
 function manifestLostState(root) {
-  const file = path8.join(root, COMPILED_DIR2, "manifest.json");
+  const file = path9.join(root, COMPILED_DIR2, "manifest.json");
   let text2;
   try {
-    text2 = fs9.readFileSync(file, "utf8");
+    text2 = fs10.readFileSync(file, "utf8");
   } catch {
     return "manifest.json is missing";
   }
@@ -8116,9 +8253,9 @@ function manifestLostState(root) {
   }
   return "manifest.json was refused (it names a path apply may not touch, or it is not a manifest this version reads: a hand edit or a tampered file)";
 }
-var MANIFEST_ROUTED_FILE = /^(?:\.claude\/)?OnDemandMemory\/[A-Za-z0-9_][A-Za-z0-9_-]*\.(md|json)$/;
+var MANIFEST_ROUTED_FILE = /^(?:\.claude\/)?OnDemandMemory\/[A-Za-z0-9_][A-Za-z0-9_ .()-]*\.(md|json)$/;
 function isSafeManifestPath(file) {
-  return typeof file === "string" && file.length > 0 && !file.includes("\\") && !file.includes("\0") && !path8.isAbsolute(file) && !path8.posix.isAbsolute(file) && !/^[A-Za-z]:/.test(file) && !file.split("/").some((seg) => seg === ".." || seg === "");
+  return typeof file === "string" && file.length > 0 && !file.includes("\\") && !file.includes("\0") && !path9.isAbsolute(file) && !path9.posix.isAbsolute(file) && !/^[A-Za-z]:/.test(file) && !file.split("/").some((seg) => seg === ".." || seg === "");
 }
 function manifestPathsSafe(raw) {
   if (!raw.index || !isSafeManifestPath(raw.index.file)) return false;
@@ -8130,7 +8267,7 @@ function manifestPathsSafe(raw) {
 }
 function readFolderManifest(root) {
   try {
-    const raw = JSON.parse(fs9.readFileSync(path8.join(root, COMPILED_DIR2, "manifest.json"), "utf8"));
+    const raw = JSON.parse(fs10.readFileSync(path9.join(root, COMPILED_DIR2, "manifest.json"), "utf8"));
     if (raw && raw.version === 6 && (raw.mode === "host" || raw.mode === "folder") && raw.index && raw.routedDir && Array.isArray(raw.sources) && manifestPathsSafe(raw)) {
       return raw;
     }
@@ -8140,44 +8277,44 @@ function readFolderManifest(root) {
 }
 function readOldManifestVersion(root) {
   try {
-    const raw = JSON.parse(fs9.readFileSync(path8.join(root, COMPILED_DIR2, "manifest.json"), "utf8"));
+    const raw = JSON.parse(fs10.readFileSync(path9.join(root, COMPILED_DIR2, "manifest.json"), "utf8"));
     if (raw.version === 4 || raw.version === 5) return raw.version;
   } catch {
   }
   return void 0;
 }
 var LINK_HOST_NAMES = /* @__PURE__ */ new Set(["CLAUDE.md", "AGENTS.md", "CLAUDE.local.md"]);
-var fold = (x) => pathKey(path8.resolve(x));
+var fold = (x) => pathKey(path9.resolve(x));
 var realRoots = /* @__PURE__ */ new Map();
 function realRootOf(root) {
   let real = realRoots.get(root);
   if (real === void 0) {
     try {
-      real = fs9.realpathSync(root);
+      real = fs10.realpathSync(root);
     } catch {
-      real = path8.resolve(root);
+      real = path9.resolve(root);
     }
     realRoots.set(root, real);
   }
   return real;
 }
 function asTyped(root, p) {
-  if (underPath(root, p)) return path8.resolve(p);
-  return path8.join(path8.resolve(root), path8.relative(realRootOf(root), path8.resolve(p)));
+  if (underPath(root, p)) return path9.resolve(p);
+  return path9.join(path9.resolve(root), path9.relative(realRootOf(root), path9.resolve(p)));
 }
 function underPath(root, p, viaReal = false) {
   const q = fold(p);
   const roots = viaReal ? [root, realRootOf(root)] : [root];
   return roots.some((r) => {
     const k = fold(r);
-    return q === k || q.startsWith(k.endsWith(path8.sep) ? k : k + path8.sep);
+    return q === k || q.startsWith(k.endsWith(path9.sep) ? k : k + path9.sep);
   });
 }
 function samePathString(a, b) {
   return fold(a) === fold(b);
 }
 function importTarget(fromAbs, raw) {
-  return raw.startsWith("~/") ? path8.join(os2.homedir(), raw.slice(2)) : path8.resolve(path8.dirname(fromAbs), raw);
+  return raw.startsWith("~/") ? path9.join(os2.homedir(), raw.slice(2)) : path9.resolve(path9.dirname(fromAbs), raw);
 }
 function pointerText(content) {
   const out = [];
@@ -8197,10 +8334,10 @@ function pointerText(content) {
 function namesRoot(fileAbs, content, root) {
   const low = (x) => pathKey(x);
   const text2 = low(pointerText(content).replace(/\\/g, "/"));
-  const forms = /* @__PURE__ */ new Set([low(root.split(path8.sep).join("/")), low(realRootOf(root).split(path8.sep).join("/"))]);
-  const rel = path8.relative(path8.dirname(fileAbs), root).split(path8.sep).join("/");
-  if (rel && rel.includes("/") && !path8.isAbsolute(rel)) forms.add(low(rel.replace(/^(\.\/)+/, "")));
-  if (underPath(os2.homedir(), root)) forms.add(low(`~/${path8.relative(os2.homedir(), root).split(path8.sep).join("/")}`));
+  const forms = /* @__PURE__ */ new Set([low(root.split(path9.sep).join("/")), low(realRootOf(root).split(path9.sep).join("/"))]);
+  const rel = path9.relative(path9.dirname(fileAbs), root).split(path9.sep).join("/");
+  if (rel && rel.includes("/") && !path9.isAbsolute(rel)) forms.add(low(rel.replace(/^(\.\/)+/, "")));
+  if (underPath(os2.homedir(), root)) forms.add(low(`~/${path9.relative(os2.homedir(), root).split(path9.sep).join("/")}`));
   for (const form of forms) {
     let at = text2.indexOf(form);
     while (at >= 0) {
@@ -8225,14 +8362,14 @@ function traceLink(start, root, seen, allowed) {
   const visit = (abs, depth) => {
     if (depth > MAX_IMPORT_DEPTH || seen.has(fold(abs))) return false;
     if (allowed && !allowed.has(fold(abs)) && !underPath(root, abs, true)) {
-      unreported.add(path8.resolve(abs));
+      unreported.add(path9.resolve(abs));
       return false;
     }
     seen.add(fold(abs));
     let content;
     try {
       if (!isPlainFile(abs)) return false;
-      content = fs9.readFileSync(abs, "utf8");
+      content = fs10.readFileSync(abs, "utf8");
     } catch {
       return false;
     }
@@ -8247,7 +8384,7 @@ function traceLink(start, root, seen, allowed) {
       if (underPath(root, target, true)) {
         if (containedIn(root, target) && isPlainFile(target)) {
           into.add(asTyped(root, target));
-          importers.add(path8.resolve(abs));
+          importers.add(path9.resolve(abs));
           linked = true;
           direct = true;
         }
@@ -8257,12 +8394,12 @@ function traceLink(start, root, seen, allowed) {
       }
     }
     const pointer = pointerName(content);
-    if (pointer && LINK_HOST_NAMES.has(pointer) && visit(path8.join(path8.dirname(abs), pointer), depth + 1)) {
+    if (pointer && LINK_HOST_NAMES.has(pointer) && visit(path9.join(path9.dirname(abs), pointer), depth + 1)) {
       linked = true;
-      next ??= path8.join(path8.dirname(abs), pointer);
+      next ??= path9.join(path9.dirname(abs), pointer);
     }
-    if (linked) chain.add(path8.resolve(abs));
-    if (linked && !direct && next) leadsTo.set(path8.resolve(abs), path8.resolve(next));
+    if (linked) chain.add(path9.resolve(abs));
+    if (linked && !direct && next) leadsTo.set(path9.resolve(abs), path9.resolve(next));
     return linked;
   };
   visit(start, 1);
@@ -8270,12 +8407,12 @@ function traceLink(start, root, seen, allowed) {
 }
 function configuredAutoMemoryDir() {
   const configured = readAutoMemoryDirectorySetting();
-  return configured ? path8.resolve(expandHome(configured)) : void 0;
+  return configured ? path9.resolve(expandHome(configured)) : void 0;
 }
 function isClaudeMemoryFolder(dir) {
-  const abs = path8.resolve(dir);
-  const projects = path8.join(claudeConfigDir(), "projects");
-  if (path8.basename(abs) === "memory" && fold(path8.dirname(path8.dirname(abs))) === fold(projects)) return true;
+  const abs = path9.resolve(dir);
+  const projects = path9.join(claudeConfigDir(), "projects");
+  if (path9.basename(abs) === "memory" && fold(path9.dirname(path9.dirname(abs))) === fold(projects)) return true;
   const configured = configuredAutoMemoryDir();
   return configured !== void 0 && fold(configured) === fold(abs);
 }
@@ -8303,13 +8440,13 @@ function linkHosts(files, root, options) {
     active = { files: present, memoryDir: saved.memoryDir, source: "saved", savedBy: "apply" };
   }
   const namedMemoryDir = (active ?? given)?.memoryDir;
-  const claude = isClaudeMemoryFolder(root) || namedMemoryDir !== void 0 && samePathString(path8.resolve(namedMemoryDir), root);
-  const gitTop = options.cwd ? findGitRoot(path8.resolve(options.cwd)) : void 0;
+  const claude = isClaudeMemoryFolder(root) || namedMemoryDir !== void 0 && samePathString(path9.resolve(namedMemoryDir), root);
+  const gitTop = options.cwd ? findGitRoot(path9.resolve(options.cwd)) : void 0;
   const label = (abs) => {
-    const rel = (base) => path8.relative(base, abs).split(path8.sep).join("/");
+    const rel = (base) => path9.relative(base, abs).split(path9.sep).join("/");
     if (underPath(config, abs)) return `(user)/${rel(config)}`;
     if (gitTop && underPath(gitTop, abs)) return `(project)/${rel(gitTop)}`;
-    return `(linked)/${path8.basename(abs)}`;
+    return `(linked)/${path9.basename(abs)}`;
   };
   const links = [];
   const into = /* @__PURE__ */ new Set();
@@ -8325,35 +8462,35 @@ function linkHosts(files, root, options) {
       if (linkedSet.has(fold(c))) continue;
       linkedSet.add(fold(c));
       links.push({
-        abs: path8.resolve(c),
+        abs: path9.resolve(c),
         rel: label(c),
         link: t.into.length > 0 ? "import" : "mention",
         rewrite: t.importers.includes(c),
-        ...t.leadsTo.get(path8.resolve(c)) ? { via: t.leadsTo.get(path8.resolve(c)) } : {}
+        ...t.leadsTo.get(path9.resolve(c)) ? { via: t.leadsTo.get(path9.resolve(c)) } : {}
       });
     }
     for (const x of t.into) into.add(x);
   }
   const notLinked = outside.filter((f) => !linkedSet.has(fold(f)));
   const unreportedHosts = [];
-  const userFile = path8.join(config, "CLAUDE.md");
+  const userFile = path9.join(config, "CLAUDE.md");
   if (active && !allowed.has(fold(userFile)) && isPlainFile(userFile)) {
     const t = traceLink(userFile, root, /* @__PURE__ */ new Set(), /* @__PURE__ */ new Set([fold(userFile)]));
     if (t.into.length > 0 && !linkedSet.has(fold(userFile))) {
       linkedSet.add(fold(userFile));
-      links.push({ abs: path8.resolve(userFile), rel: label(userFile), link: "import", rewrite: t.importers.includes(userFile) });
+      links.push({ abs: path9.resolve(userFile), rel: label(userFile), link: "import", rewrite: t.importers.includes(userFile) });
       for (const x of t.into) into.add(x);
       for (const u of t.unreported) unreported.add(u);
-      unreportedHosts.push(path8.resolve(userFile));
+      unreportedHosts.push(path9.resolve(userFile));
     }
   }
   let userHost;
   for (const l of links) {
     try {
-      const file = readFile(path8.dirname(l.abs), l.abs, "import", true);
+      const file = readFile(path9.dirname(l.abs), l.abs, "import", true);
       file.rel = l.rel;
       files.push(file);
-      if (samePathString(l.abs, path8.join(config, "CLAUDE.md"))) userHost = file;
+      if (samePathString(l.abs, path9.join(config, "CLAUDE.md"))) userHost = file;
     } catch {
       continue;
     }
@@ -8380,7 +8517,7 @@ function linkHosts(files, root, options) {
     }
   }
   if (claude) {
-    const index = byAbs.get(fold(path8.join(root, "MEMORY.md")));
+    const index = byAbs.get(fold(path9.join(root, "MEMORY.md")));
     const cut = index ? claudeIndexCut(index.content) : void 0;
     if (index && cut !== void 0) {
       index.notLoadedFrom = cut + 1;
@@ -8419,7 +8556,7 @@ function reportAgainstRoot(root, files, given) {
   const inside2 = given.files.filter((f) => underPath(root, f, true));
   const reportedKeys = new Set(given.files.map((f) => fold(f)));
   const reportedNotLoaded = inside2.filter((f) => !byKey.get(fold(f))?.alwaysLoaded);
-  const loadedNotReported = given.source === "saved" ? [] : files.filter((f) => f.alwaysLoaded && !reportedKeys.has(fold(f.abs))).map((f) => path8.resolve(f.abs));
+  const loadedNotReported = given.source === "saved" ? [] : files.filter((f) => f.alwaysLoaded && !reportedKeys.has(fold(f.abs))).map((f) => path9.resolve(f.abs));
   return {
     reported: given,
     notLinked: outside.length > 0 ? outside : void 0,
@@ -8429,7 +8566,7 @@ function reportAgainstRoot(root, files, given) {
 }
 function reportedFrom(options) {
   const r = options.reported;
-  const legacy = (options.hostFiles ?? []).map((h) => path8.resolve(h));
+  const legacy = (options.hostFiles ?? []).map((h) => path9.resolve(h));
   if (!r && legacy.length === 0) return void 0;
   const files = [.../* @__PURE__ */ new Set([...(r?.files ?? []).map(resolveReported), ...legacy])];
   const bad = files.filter((f) => !/\.md$/i.test(f) || !isPlainFile(f));
@@ -8437,7 +8574,7 @@ function reportedFrom(options) {
     throw new DiscoveryError(`these reported files do not exist or are not markdown files: ${bad.join(", ")}. Report each path exactly as ${(options.host ?? currentHost()) === "codex" ? "Codex" : "Claude Code"} shows it.`);
   }
   const memoryDir = r?.memoryDir ? resolveReported(r.memoryDir) : void 0;
-  if (memoryDir && !(fs9.existsSync(memoryDir) && fs9.statSync(memoryDir).isDirectory())) {
+  if (memoryDir && !(fs10.existsSync(memoryDir) && fs10.statSync(memoryDir).isDirectory())) {
     throw new DiscoveryError(`the reported memory folder does not exist: ${memoryDir}`);
   }
   return { files, ...memoryDir ? { memoryDir } : {}, source: r?.source ?? "terminal", ...r?.savedBy ? { savedBy: r.savedBy } : {}, ...r?.onlyThisFolder ? { onlyThisFolder: true } : {} };
@@ -8580,19 +8717,19 @@ var BOOKKEEPING_GITIGNORE = "# minnimemory bookkeeping that stays local: verbati
 var HOSTS_FILE = "hosts.json";
 function readSavedReport(root) {
   try {
-    const raw = JSON.parse(fs10.readFileSync(path9.join(root, COMPILED_DIR_NAME, HOSTS_FILE), "utf8"));
-    const files = Array.isArray(raw.hosts) ? raw.hosts.filter((h) => typeof h === "string" && path9.isAbsolute(h)) : [];
-    const memoryDir = typeof raw.memoryDir === "string" && path9.isAbsolute(raw.memoryDir) ? raw.memoryDir : void 0;
+    const raw = JSON.parse(fs11.readFileSync(path10.join(root, COMPILED_DIR_NAME, HOSTS_FILE), "utf8"));
+    const files = Array.isArray(raw.hosts) ? raw.hosts.filter((h) => typeof h === "string" && path10.isAbsolute(h)) : [];
+    const memoryDir = typeof raw.memoryDir === "string" && path10.isAbsolute(raw.memoryDir) ? raw.memoryDir : void 0;
     return { files, ...memoryDir ? { memoryDir } : {}, exists: true };
   } catch {
     return { files: [] };
   }
 }
 function toRel2(root, abs) {
-  return path9.relative(root, abs).split(path9.sep).join("/");
+  return path10.relative(root, abs).split(path10.sep).join("/");
 }
 function stem2(rel) {
-  return path9.basename(rel).replace(/\.md$/i, "");
+  return path10.basename(rel).replace(/\.md$/i, "");
 }
 function normalised2(content) {
   return content.replace(/\r\n/g, "\n");
@@ -8605,7 +8742,7 @@ function withEol(text2, eol) {
 }
 function listMdFiles(dir) {
   try {
-    return fs10.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md") && !isAppleDouble(e.name)).map((e) => path9.join(dir, e.name));
+    return fs11.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md") && !isAppleDouble(e.name)).map((e) => path10.join(dir, e.name));
   } catch {
     return [];
   }
@@ -8623,7 +8760,7 @@ function ruleLineIn(content) {
 }
 function readIfExists(abs) {
   try {
-    return fs10.readFileSync(abs, "utf8");
+    return fs11.readFileSync(abs, "utf8");
   } catch {
     return void 0;
   }
@@ -8660,7 +8797,7 @@ function fixIndexLines(ws, root, indexRel, content) {
   const inRegion = (i) => region !== void 0 && i >= region.from && i <= region.to;
   const list = ws.onDemandList;
   let swapped = 0;
-  if (list && pathKey(path9.resolve(list.abs)) === pathKey(path9.resolve(root, indexRel))) {
+  if (list && pathKey(path10.resolve(list.abs)) === pathKey(path10.resolve(root, indexRel))) {
     for (const [a, b] of swappedListPairs(ws)) {
       const la = lines[a.index];
       const lb = lines[b.index];
@@ -8673,7 +8810,7 @@ function fixIndexLines(ws, root, indexRel, content) {
   }
   let trimmed = 0;
   const cap = DEFAULT_CONFIG.maxListLine;
-  const indexDir = path9.dirname(path9.join(root, indexRel));
+  const indexDir = path10.dirname(path10.join(root, indexRel));
   lines.forEach((line, i) => {
     if (inRegion(i)) return;
     const target = listLinkTarget(line);
@@ -8685,7 +8822,7 @@ function fixIndexLines(ws, root, indexRel, content) {
       decoded = decodeURI(target);
     } catch {
     }
-    const description = frontmatterDescription(readIfExists(path9.resolve(indexDir, decoded)) ?? "");
+    const description = frontmatterDescription(readIfExists(path10.resolve(indexDir, decoded)) ?? "");
     if (description === void 0) return;
     const kept = new Set(hookWords(description));
     if (!hookWords(hook).every((w) => kept.has(w))) return;
@@ -8723,7 +8860,7 @@ function dropSyntheticTitle(body, title) {
   return lines.join("\n");
 }
 function routedFrontmatter(name, heading, parentRel, type) {
-  const lines = ["---", `name: ${name}`, `description: "${heading.replace(/"/g, "'")} (routed from ${path9.basename(parentRel)} by minnimemory)"`];
+  const lines = ["---", `name: ${name}`, `description: "${heading.replace(/"/g, "'")} (routed from ${path10.basename(parentRel)} by minnimemory)"`];
   if (type) lines.push("metadata:", `  type: ${type}`);
   lines.push("---", "");
   return lines.join("\n");
@@ -8761,7 +8898,7 @@ function listLinesOnDisk(root, indexDir, content) {
     const m = /^- `([^`]+)`:/.exec(line);
     if (!m) continue;
     const named = m[1];
-    const abs = [path9.resolve(root, named), path9.resolve(indexDir, named)].find((p) => containedIn(root, p) && fs10.existsSync(p));
+    const abs = [path10.resolve(root, named), path10.resolve(indexDir, named)].find((p) => containedIn(root, p) && fs11.existsSync(p));
     if (abs) out.push({ line, named, abs });
   }
   return out;
@@ -8776,7 +8913,7 @@ function listNames(content) {
   });
 }
 function handListLines(root, indexDir, content, routedFiles) {
-  const routed = new Set(routedFiles.map((f) => path9.resolve(root, f)));
+  const routed = new Set(routedFiles.map((f) => path10.resolve(root, f)));
   return listLinesOnDisk(root, indexDir, content).filter((l) => !routed.has(l.abs)).map((l) => l.line);
 }
 function indexNamesFile(body, fileName) {
@@ -8801,7 +8938,7 @@ function rewriteLinks(content, moves) {
   for (const [oldName, newRel] of moves) {
     const forms = process.platform === "darwin" ? [oldName, oldName.normalize("NFC"), oldName.normalize("NFD")] : [oldName];
     const name = `(${[...new Set(forms)].map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`;
-    const respelled = (written) => written !== oldName && path9.posix.basename(newRel) === oldName ? `${newRel.slice(0, newRel.length - oldName.length)}${written}` : newRel;
+    const respelled = (written) => written !== oldName && path10.posix.basename(newRel) === oldName ? `${newRel.slice(0, newRel.length - oldName.length)}${written}` : newRel;
     out = out.replace(new RegExp(`\\]\\(${name}(#[^)]*)?\\)`, flags), (_m, written, anchor) => `](${respelled(written)}${anchor ?? ""})`);
     out = out.replace(new RegExp("`" + name + "`", flags), (_m, written) => `\`${respelled(written)}\``);
   }
@@ -8820,9 +8957,9 @@ function renderIndex(existing, routed, moves, routedDirLabel, isFolder, folderNo
 ` : ""}${renderList(routed, routedDirLabel, isFolder, folderNote, handLines)}`;
 }
 function hostRoutedDir(root, hostRel) {
-  if (path9.basename(root) === ".claude") return ON_DEMAND_DIR_NAME;
-  const agentsHost = hostRel !== void 0 && CODEX_HOST_FILES.includes(path9.basename(hostRel)) && !path9.dirname(hostRel).includes(".claude");
-  if (agentsHost && !fs10.existsSync(path9.join(root, ".claude"))) return ON_DEMAND_DIR_NAME;
+  if (path10.basename(root) === ".claude") return ON_DEMAND_DIR_NAME;
+  const agentsHost = hostRel !== void 0 && CODEX_HOST_FILES.includes(path10.basename(hostRel)) && !path10.dirname(hostRel).includes(".claude");
+  if (agentsHost && !fs11.existsSync(path10.join(root, ".claude"))) return ON_DEMAND_DIR_NAME;
   return `.claude/${ON_DEMAND_DIR_NAME}`;
 }
 function manifestUnderNewName(manifest, from, to) {
@@ -8882,14 +9019,14 @@ function planInputs(ws) {
   }
   const hostFile = ws.files.find((f) => f.kind === "host");
   if (!hostFile) throw new FolderError(`not a compilable workspace: ${ws.root}`);
-  const root = ws.folderRoot ?? path9.dirname(hostFile.abs);
+  const root = ws.folderRoot ?? path10.dirname(hostFile.abs);
   const pointerFrom = ws.pointerTarget ? toRel2(root, hostFile.abs) : void 0;
   const host = ws.pointerTarget ? ws.files.find((f) => toRel2(root, f.abs) === ws.pointerTarget) ?? hostFile : hostFile;
   refuseList(host);
   return {
     root,
     mode: "host",
-    index: { rel: toRel2(root, host.abs) || path9.basename(host.abs), content: host.content },
+    index: { rel: toRel2(root, host.abs) || path10.basename(host.abs), content: host.content },
     sources: [host],
     loose: [],
     pointerFrom,
@@ -8900,13 +9037,13 @@ function planInputs(ws) {
 }
 var RE_LIST_LINE = /^\s*[-*+]\s*\[[^\]]+\]\(([^)\s]+\.md)\)/i;
 function refuseList(host) {
-  const dir = path9.dirname(host.abs);
-  const named = path9.basename(host.abs).toLowerCase() === "memory.md";
+  const dir = path10.dirname(host.abs);
+  const named = path10.basename(host.abs).toLowerCase() === "memory.md";
   const lines = host.content.split(/\r?\n/).filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
   let links = 0;
   for (const l of lines) {
     const m = RE_LIST_LINE.exec(l);
-    if (m && fs10.existsSync(path9.join(dir, m[1]))) links++;
+    if (m && fs11.existsSync(path10.join(dir, m[1]))) links++;
   }
   const mostlyLinks = links >= 3 && links * 2 >= lines.length;
   if (!named && !mostlyLinks) return;
@@ -8941,23 +9078,43 @@ function mergeByReason(routed) {
     buckets.get(key2)?.push(m);
   }
   for (const key2 of order) {
-    const chunks = [];
-    let used = 0;
-    for (const m of buckets.get(key2) ?? []) {
-      const current2 = chunks[chunks.length - 1];
-      if (!current2 || used + m.tokens > ROUTED_PIECE_MAX_TOKENS) {
-        chunks.push([m]);
-        used = m.tokens;
-      } else {
-        current2.push(m);
-        used += m.tokens;
+    const bucket = buckets.get(key2) ?? [];
+    const total = bucket.reduce((n, m) => n + m.tokens, 0);
+    const perSection = key2 === "detail" && bucket.length > 1 && total > DETAIL_SPLIT_ABOVE_TOKENS;
+    const pack = (target) => {
+      const chunks2 = [];
+      const sizes2 = [];
+      for (const m of bucket) {
+        const at = chunks2.length - 1;
+        const size = at < 0 ? 0 : sizes2[at];
+        const closeSplit = perSection && (size >= target || size + m.tokens > target && size >= target / 2);
+        if (at < 0 || closeSplit || size + m.tokens > ROUTED_PIECE_MAX_TOKENS) {
+          chunks2.push([m]);
+          sizes2.push(m.tokens);
+        } else {
+          chunks2[at]?.push(m);
+          sizes2[at] = size + m.tokens;
+        }
       }
+      return { chunks: chunks2, sizes: sizes2 };
+    };
+    let packed = pack(Math.max(DETAIL_PIECE_TOKENS, Math.ceil(total / DETAIL_MAX_PIECES)));
+    if (perSection && packed.chunks.length > DETAIL_MAX_PIECES) packed = pack(Math.max(DETAIL_PIECE_TOKENS, Math.ceil(2 * total / DETAIL_MAX_PIECES)));
+    const { chunks, sizes } = packed;
+    if (perSection && chunks.length > 1 && sizes[sizes.length - 1] < PIECE_MIN_TOKENS) {
+      const tail = chunks.pop();
+      chunks[chunks.length - 1]?.push(...tail);
     }
-    chunks.forEach((bucket, i) => out.push(mergeBucket(bucket, i === 0 ? key2 : `${key2}_${i + 1}`)));
+    chunks.forEach(
+      (piece, i) => out.push(mergeBucket(piece, perSection ? `${key2}-${slugify(piece[0].heading)}` : i === 0 ? key2 : `${key2}_${i + 1}`))
+    );
   }
   return out;
 }
 var ROUTED_PIECE_MAX_TOKENS = 2e4;
+var DETAIL_SPLIT_ABOVE_TOKENS = 1500;
+var DETAIL_PIECE_TOKENS = 800;
+var DETAIL_MAX_PIECES = 12;
 function mergeBucket(bucket, key2) {
   const first = bucket[0];
   if (bucket.length === 1) return { ...first, name: key2 };
@@ -9028,7 +9185,7 @@ function planFolder(ws, options = {}) {
   const indexCreated = inputs.index === void 0;
   const indexContent = inputs.index?.content ?? "";
   if (!existing) {
-    const listed = listedOnDisk(root, path9.dirname(path9.join(root, indexRel)), indexContent);
+    const listed = listedOnDisk(root, path10.dirname(path10.join(root, indexRel)), indexContent);
     if (listed.length > 0) {
       throw new FolderError(
         `apply refused: ${indexRel} already holds a minnimemory list that names ${listed.length} file(s) still on disk (${listed.join(", ")}), but ${COMPILED_DIR_NAME}/ is missing, so this would be a first compile and that list would be dropped. Restore ${COMPILED_DIR_NAME}/ from git. To start over instead, delete the list block from ${indexRel} (from "${LIST_START}" to "${LIST_END}"), then run this again. Nothing was changed.`
@@ -9046,20 +9203,20 @@ function planFolder(ws, options = {}) {
   const pool = Math.max(0, budget - fixed);
   const shares = fairShares(inputs.sources, pool);
   const shareFor = (f) => shares.get(f.abs) ?? 0;
-  const fixedNames = loaded.filter((f) => !inputs.sources.some((s) => s.abs === f.abs)).map((f) => path9.basename(f.abs));
+  const fixedNames = loaded.filter((f) => !inputs.sources.some((s) => s.abs === f.abs)).map((f) => path10.basename(f.abs));
   const fixedWho = fixedNames.length === 0 ? "the OnDemandMemory list" : fixedNames.length === 1 ? fixedNames[0] : `${fixedNames.slice(0, -1).join(", ")} and ${fixedNames[fixedNames.length - 1]}`;
   const shareNote = pool === 0 ? `${fixedWho} alone ${fixedNames.length === 1 ? "uses" : "use"} ${formatTokens(before - sourceTokens)} of the ${formatTokens(budget)} token budget, so every source keeps only its title and stable preamble; raise --budget to keep more` : pool >= sourceTokens ? `${formatTokens(pool)} tokens of the ${formatTokens(budget)} budget cover all ${formatTokens(sourceTokens)} tokens of the ${inputs.sources.length} always-loaded file(s); nothing is demoted for size` : `${formatTokens(pool)} tokens of the ${formatTokens(budget)} budget are shared among ${inputs.sources.length} always-loaded file(s): a file that fits an equal share keeps every stable section, the largest files split the rest`;
   const taken = /* @__PURE__ */ new Set();
   for (const f of ws.files) if (containedIn(root, f.abs)) taken.add(toRel2(root, f.abs));
   for (const dirName of isFolder ? [ALWAYS_ON_DIR_NAME, ON_DEMAND_DIR_NAME] : [routedDir]) {
-    for (const abs of listMdFiles(path9.join(root, dirName))) taken.add(toRel2(root, abs));
+    for (const abs of listMdFiles(path10.join(root, dirName))) taken.add(toRel2(root, abs));
   }
   const keptRouted = [];
   const refreshedHash = /* @__PURE__ */ new Map();
   if (existingManifest) {
     for (const s of existingManifest.sources) {
       for (const r of s.routed) {
-        const content = readIfExists(path9.join(root, r.file));
+        const content = readIfExists(path10.join(root, r.file));
         if (content === void 0) continue;
         refreshedHash.set(r.file, driftHash(content));
         keptRouted.push(r);
@@ -9079,7 +9236,7 @@ function planFolder(ws, options = {}) {
   const hasOriginal = (rel) => {
     const entry = existingManifest?.sources.find((e) => e.file === rel || e.origin === rel);
     const oldName = renamed && rel === renamed.to ? renamed.from : void 0;
-    return [rel, entry?.origin, entry?.file, oldName].some((r) => r !== void 0 && fs10.existsSync(path9.join(root, COMPILED_DIR_NAME, "original", `${r}.bak`)));
+    return [rel, entry?.origin, entry?.file, oldName].some((r) => r !== void 0 && fs11.existsSync(path10.join(root, COMPILED_DIR_NAME, "original", `${r}.bak`)));
   };
   const bakDirFor = (rel) => bakDir === "previous" && !hasOriginal(rel) ? "original" : bakDir;
   const operations = [];
@@ -9090,9 +9247,9 @@ function planFolder(ws, options = {}) {
   for (const r of keptRouted) {
     const now = refreshedHash.get(r.file);
     if (now === void 0 || now === r.hash) continue;
-    const content = readIfExists(path9.join(root, r.file));
+    const content = readIfExists(path10.join(root, r.file));
     if (content === void 0) continue;
-    copies.push({ op: "copy", from: path9.join(root, r.file), to: path9.join(root, COMPILED_DIR_NAME, "previous", `${r.file}.bak`), content });
+    copies.push({ op: "copy", from: path10.join(root, r.file), to: path10.join(root, COMPILED_DIR_NAME, "previous", `${r.file}.bak`), content });
   }
   let hostBodyAfter;
   const claim = (rel, why) => {
@@ -9107,7 +9264,7 @@ function planFolder(ws, options = {}) {
   const undrifted = (originRel, content) => sameBudget === true && (existingManifest?.sources ?? []).some((e) => e.compiled && e.file === originRel && e.hash === hash(normalised2(content)));
   for (const src of inputs.sources) {
     const originRel = toRel2(root, src.abs);
-    const destRel = isFolder ? `${ALWAYS_ON_DIR_NAME}/${path9.basename(originRel)}` : originRel;
+    const destRel = isFolder ? `${ALWAYS_ON_DIR_NAME}/${path10.basename(originRel)}` : originRel;
     if (undrifted(originRel, src.content) && destRel === originRel) {
       sourcePlans.push({ rel: destRel, originRel, before: src.tokens, after: src.tokens, share: shareFor(src), routed: [], demoted: [], moveOnly: false, unchanged: true });
       continue;
@@ -9120,9 +9277,16 @@ function planFolder(ws, options = {}) {
     const eol = eolOf(src.content);
     const sourceContent = stripGeneratedContent(src.content);
     const compiled = compile(sourceContent, {
-      sourceName: path9.basename(originRel),
+      sourceName: path10.basename(originRel),
       profileName: isFolder ? "none" : options.profileName ?? "none",
-      budget: shareFor(src),
+      // A project host file is the one source, so it gets the whole pool, not a share capped at
+      // its own size. Its compile charges the title and the list on top of its sections
+      // (compile.ts `used`), so with the cap a file of kept sections that fit the budget could
+      // never keep them all: a 371-token file of five lost the largest inside a 2,000 budget,
+      // and --budget did not help (2026-10-27). The pool still sets the list's cost aside
+      // (`fixed`), which covers the compile's low estimate of it. Shares split a folder's pool
+      // between its sources; a folder source charges no list.
+      budget: isFolder ? shareFor(src) : pool,
       episodicJson: options.episodicJson,
       // A folder's sources are the user's own always-on files: every stable section is a
       // candidate and volatility is the strict test (compile.ts, alwaysOnSource); the hint list
@@ -9155,7 +9319,7 @@ function planFolder(ws, options = {}) {
       if (previousHash !== void 0 && previousHash !== nowHash) {
         refreshedSourceHash.set(originRel, nowHash);
         accepted.push(originRel);
-        copies.push({ op: "copy", from: path9.join(root, originRel), to: path9.join(root, COMPILED_DIR_NAME, bakDirFor(originRel), `${originRel}.bak`), content: src.content });
+        copies.push({ op: "copy", from: path10.join(root, originRel), to: path10.join(root, COMPILED_DIR_NAME, bakDirFor(originRel), `${originRel}.bak`), content: src.content });
       }
       continue;
     }
@@ -9184,7 +9348,7 @@ function planFolder(ws, options = {}) {
       let file = `${routedDir}/${name}.${ext}`;
       const priorAt = existing && !isJson && m.reason === "volatile" ? entry.routed.findIndex((r) => r.file === file) : -1;
       const prior = priorAt >= 0 ? entry.routed[priorAt] : void 0;
-      const onDisk2 = prior ? readIfExists(path9.join(root, prior.file)) : void 0;
+      const onDisk2 = prior ? readIfExists(path10.join(root, prior.file)) : void 0;
       const priorContent = onDisk2 !== void 0 && estimateTokens(onDisk2) + m.tokens <= ROUTED_PIECE_MAX_TOKENS ? onDisk2 : void 0;
       if (prior && priorContent !== void 0) {
         entry.routed.splice(priorAt, 1);
@@ -9226,42 +9390,42 @@ ${m.content.trimEnd()}
         sourceLines: [m.sourceStartLine, m.sourceEndLine]
       });
     }
-    copies.push({ op: "copy", from: path9.join(root, originRel), to: path9.join(root, COMPILED_DIR_NAME, bakDirFor(originRel), `${originRel}.bak`), content: src.content });
-    if (isFolder) writes.push({ op: "write", path: path9.join(root, destRel), content: withEol(after2, eol) });
+    copies.push({ op: "copy", from: path10.join(root, originRel), to: path10.join(root, COMPILED_DIR_NAME, bakDirFor(originRel), `${originRel}.bak`), content: src.content });
+    if (isFolder) writes.push({ op: "write", path: path10.join(root, destRel), content: withEol(after2, eol) });
     else hostBodyAfter = after2;
     if (destRel !== originRel) {
-      moves.set(path9.basename(originRel), destRel);
-      deleteOps.push({ op: "delete", path: path9.join(root, originRel) });
+      moves.set(path10.basename(originRel), destRel);
+      deleteOps.push({ op: "delete", path: path10.join(root, originRel) });
     }
     manifestSources.push(entry);
   }
   const looseContent = /* @__PURE__ */ new Map();
   for (const f of inputs.loose) {
     const originRel = toRel2(root, f.abs);
-    const destRel = fixOnly ? originRel : `${routedDir}/${path9.basename(originRel)}`;
+    const destRel = fixOnly ? originRel : `${routedDir}/${path10.basename(originRel)}`;
     if (destRel === originRel) {
       manifestSources.push({ file: destRel, origin: originRel, compiled: false, hash: hash(normalised2(f.content)), routed: [] });
       continue;
     }
     if (!claim(destRel, `moving ${originRel}`)) continue;
     looseContent.set(destRel, f.content);
-    moveOps.push({ op: "move", from: path9.join(root, originRel), to: path9.join(root, destRel) });
-    moves.set(path9.basename(originRel), destRel);
+    moveOps.push({ op: "move", from: path10.join(root, originRel), to: path10.join(root, destRel) });
+    moves.set(path10.basename(originRel), destRel);
     manifestSources.push({ file: destRel, origin: originRel, compiled: false, hash: hash(normalised2(f.content)), routed: [] });
   }
   if (collisions.length > 0) {
     const [rel, why] = collisions[0];
     throw new FolderError(`refusing to apply: ${rel} already exists at the destination (${why})`);
   }
-  if (indexCreated && fs10.existsSync(path9.join(root, indexRel))) {
-    const clash = fs10.readdirSync(root).find((n) => n.toLowerCase() === indexRel.toLowerCase()) ?? indexRel;
+  if (indexCreated && fs11.existsSync(path10.join(root, indexRel))) {
+    const clash = fs11.readdirSync(root).find((n) => n.toLowerCase() === indexRel.toLowerCase()) ?? indexRel;
     throw new FolderError(
       `apply refused: this folder has no ${indexRel}, so apply would create one, but this disk ignores letter case and ${clash} is the same file, so ${clash} would be overwritten. Rename ${clash} (for example to ${clash.replace(/\.md$/i, "_notes.md")}), then run init again. Nothing was changed.`
     );
   }
   if (isFolder && moves.size > 0) {
     for (const host of inputs.namingHosts ?? []) {
-      const named = [...moves.keys()].filter((name) => namesRoot(host.abs, host.content, path9.join(root, name))).sort();
+      const named = [...moves.keys()].filter((name) => namesRoot(host.abs, host.content, path10.join(root, name))).sort();
       if (named.length === 0) continue;
       throw new FolderError(
         `apply refused: ${host.rel} names ${named.join(", ")} by path, and this sort moves ${named.length === 1 ? "it" : "them"} into ${ALWAYS_ON_DIR_NAME}/ or ${ON_DEMAND_DIR_NAME}/, so ${host.rel} would point at files that are no longer there. Leave this folder as it is, or change those lines in ${host.abs} to name the folder instead of its files, then run init again. Nothing was changed.`
@@ -9269,7 +9433,7 @@ ${m.content.trimEnd()}
     }
   }
   const allRoutedForTriggers = [
-    ...keptRouted.map((r) => ({ name: r.name, heading: r.name, content: readIfExists(path9.join(root, r.file)) ?? "" })),
+    ...keptRouted.map((r) => ({ name: r.name, heading: r.name, content: readIfExists(path10.join(root, r.file)) ?? "" })),
     ...newRouted.map((r) => ({ name: r.m.name, heading: r.m.heading, content: r.m.content }))
   ];
   const chosen = selectTriggers(allRoutedForTriggers);
@@ -9278,7 +9442,7 @@ ${m.content.trimEnd()}
     r.m.triggers = chosen.get(r.m.name) ?? r.m.triggers;
     for (const s of manifestSources) for (const e of s.routed) if (isNew.has(e.name) && e.name === r.m.name) e.triggers = r.m.triggers;
   }
-  for (const r of newRouted) writes.push({ op: "write", path: path9.join(root, r.m.file), content: r.content });
+  for (const r of newRouted) writes.push({ op: "write", path: path10.join(root, r.m.file), content: r.content });
   const mergedSources = [];
   const replacedOrigins = new Set(manifestSources.map((s) => s.origin));
   if (existingManifest) {
@@ -9291,7 +9455,7 @@ ${m.content.trimEnd()}
   for (const s of existingManifest?.sources ?? []) {
     if (replacedOrigins.has(s.origin)) continue;
     const stillThere = s.routed.filter((r) => keptRouted.includes(r)).map(withRefreshedHash);
-    if (stillThere.length === 0 && !s.compiled && !fs10.existsSync(path9.join(root, s.file))) continue;
+    if (stillThere.length === 0 && !s.compiled && !fs11.existsSync(path10.join(root, s.file))) continue;
     mergedSources.push({ ...s, hash: (s.compiled ? refreshedSourceHash.get(s.file) : void 0) ?? s.hash, routed: stillThere });
   }
   mergedSources.push(...manifestSources);
@@ -9301,13 +9465,13 @@ ${m.content.trimEnd()}
     const body = withoutList(rewriteLinks(indexContent, moves));
     for (const s of mergedSources) {
       if (s.compiled || !s.file.startsWith(`${routedDir}/`) || !s.file.toLowerCase().endsWith(".md")) continue;
-      const base = path9.basename(s.file);
+      const base = path10.basename(s.file);
       if (indexNamesFile(body, base)) continue;
       if (looksLikeCopyName(base)) {
         unnamed.skipped.push(s.file);
         continue;
       }
-      const content = looseContent.get(s.file) ?? readIfExists(path9.join(root, s.file)) ?? "";
+      const content = looseContent.get(s.file) ?? readIfExists(path10.join(root, s.file)) ?? "";
       const h1 = /^#\s+(.+)$/m.exec(content)?.[1]?.trim();
       unnamedCandidates.push({ name: base.replace(/\.md$/i, ""), heading: h1 ?? base.replace(/\.md$/i, ""), content, file: s.file });
       unnamed.listed.push(s.file);
@@ -9316,14 +9480,14 @@ ${m.content.trimEnd()}
   const unnamedTriggers = unnamedCandidates.length > 0 ? selectTriggers([...allRoutedForTriggers, ...unnamedCandidates]) : /* @__PURE__ */ new Map();
   const listedBefore = /* @__PURE__ */ new Map();
   if (existing) {
-    for (const l of listLinesOnDisk(root, path9.dirname(path9.join(root, indexRel)), indexContent)) {
+    for (const l of listLinesOnDisk(root, path10.dirname(path10.join(root, indexRel)), indexContent)) {
       const words = l.line.slice(l.line.indexOf("`:") + 2).split(",").map((w) => w.trim()).filter(Boolean);
       if (words.length > 0) listedBefore.set(pathKey(l.abs), words);
     }
   }
   const unnamedEntries = unnamedCandidates.map((c) => ({
     file: c.file,
-    triggers: listedBefore.get(pathKey(path9.join(root, c.file))) ?? unnamedTriggers.get(c.name) ?? keywords(c.heading, c.content)
+    triggers: listedBefore.get(pathKey(path10.join(root, c.file))) ?? unnamedTriggers.get(c.name) ?? keywords(c.heading, c.content)
   })).sort((a, b) => a.file.localeCompare(b.file));
   if (unnamed.skipped.length > 0) {
     const shown = unnamed.skipped.slice(0, 5).join(", ") + (unnamed.skipped.length > 5 ? `, and ${unnamed.skipped.length - 5} more` : "");
@@ -9333,10 +9497,12 @@ ${m.content.trimEnd()}
   }
   const listEntries = [...mergedSources.flatMap((s) => s.routed.map((r) => ({ file: r.file, triggers: r.triggers }))), ...unnamedEntries];
   const folderNote = isFolder ? containedIn(claudeConfigDir(), root) ? `Paths below are relative to this file's folder, ${root}.` : "Paths below are relative to this file's folder." : void 0;
-  const handLines = existing ? handListLines(root, path9.dirname(path9.join(root, indexRel)), indexContent, listEntries.map((e) => e.file)) : [];
+  const handLines = existing ? handListLines(root, path10.dirname(path10.join(root, indexRel)), indexContent, listEntries.map((e) => e.file)) : [];
   const indexFix = isFolder && !indexCreated ? fixIndexLines(ws, root, indexRel, indexContent) : { content: indexContent, swapped: 0, trimmed: 0 };
-  const newIndex = fixOnly ? indexFix.content : renderIndex(hostBodyAfter ?? indexFix.content, listEntries, moves, routedDir, isFolder, folderNote, handLines);
-  const onDisk = existing ? new Set(listedOnDisk(root, path9.dirname(path9.join(root, indexRel)), indexContent)) : /* @__PURE__ */ new Set();
+  const userHost = !isFolder && [claudeConfigDir(), hostConfigDir("codex")].some((d) => pathKey(path10.resolve(d)) === pathKey(path10.resolve(root)));
+  const shownEntries = userHost ? listEntries.map((e) => ({ ...e, file: path10.join(root, e.file).split(path10.sep).join("/") })) : listEntries;
+  const newIndex = fixOnly ? indexFix.content : renderIndex(hostBodyAfter ?? indexFix.content, shownEntries, moves, routedDir, isFolder, folderNote, handLines);
+  const onDisk = existing ? new Set(listedOnDisk(root, path10.dirname(path10.join(root, indexRel)), indexContent)) : /* @__PURE__ */ new Set();
   const dropped = existing ? listNames(indexContent).filter((n) => !onDisk.has(n) && !listNames(newIndex).includes(n)) : [];
   if (dropped.length > 0) {
     warnings.push(
@@ -9346,8 +9512,8 @@ ${m.content.trimEnd()}
   const forceIndexWrite = !isFolder && sourcePlans.some((s) => !s.unchanged);
   const indexChanged = normalised2(newIndex) !== normalised2(indexContent) || forceIndexWrite;
   if (!isFolder && ws.host === "codex" && ws.codex) {
-    const indexAbs = path9.resolve(path9.join(root, indexRel));
-    const self = ws.codex.chain.find((c) => pathKey(path9.resolve(c.abs)) === pathKey(indexAbs));
+    const indexAbs = path10.resolve(path10.join(root, indexRel));
+    const self = ws.codex.chain.find((c) => pathKey(path10.resolve(c.abs)) === pathKey(indexAbs));
     const ahead = ws.codex.chain.filter((c) => self !== void 0 && c.order < self.order && c.layer === "project" && c.loaded).reduce((n, c) => n + c.bytes, 0);
     const after2 = ahead + Buffer.byteLength(newIndex, "utf8");
     if (self && self.layer === "project" && after2 > ws.codex.cap) {
@@ -9359,11 +9525,11 @@ ${m.content.trimEnd()}
   }
   if (indexChanged) {
     if (!indexCreated && hostBodyAfter === void 0) {
-      copies.push({ op: "copy", from: path9.join(root, indexRel), to: path9.join(root, COMPILED_DIR_NAME, bakDirFor(indexRel), `${indexRel}.bak`), content: indexContent });
+      copies.push({ op: "copy", from: path10.join(root, indexRel), to: path10.join(root, COMPILED_DIR_NAME, bakDirFor(indexRel), `${indexRel}.bak`), content: indexContent });
     }
-    writes.push({ op: "write", path: path9.join(root, indexRel), content: withEol(newIndex, eolOf(indexContent)) });
+    writes.push({ op: "write", path: path10.join(root, indexRel), content: withEol(newIndex, eolOf(indexContent)) });
     const lines = newIndex.split("\n").length;
-    const cut = ws.claudeMemoryFolder && path9.basename(indexRel) === "MEMORY.md" ? claudeIndexCut(newIndex) : void 0;
+    const cut = ws.claudeMemoryFolder && path10.basename(indexRel) === "MEMORY.md" ? claudeIndexCut(newIndex) : void 0;
     const listEnd = newIndex.split(/\r?\n/).indexOf(LIST_END);
     if (cut !== void 0 && listEnd >= cut) {
       throw new FolderError(
@@ -9387,8 +9553,8 @@ ${m.content.trimEnd()}
         throw new FolderError(`${host.abs} is not valid UTF-8, so rewriting its @import lines would corrupt it; convert it to UTF-8 first`);
       }
       const backupFile = encodeAbsolutePath(host.abs);
-      const backupAbs = path9.join(root, COMPILED_DIR_NAME, "original", backupFile);
-      if (!fs10.existsSync(backupAbs)) copies.push({ op: "copy", from: host.abs, to: backupAbs, content: host.content });
+      const backupAbs = path10.join(root, COMPILED_DIR_NAME, "original", backupFile);
+      if (!fs11.existsSync(backupAbs)) copies.push({ op: "copy", from: host.abs, to: backupAbs, content: host.content });
       writes.push({ op: "write", path: host.abs, content: rewritten });
       hostImportRewrites.push({ file: host.abs, before: host.content, after: rewritten });
       if (!manifestHostImportBackups.some((b) => samePath(b.abs, host.abs))) manifestHostImportBackups.push({ abs: host.abs, backupFile });
@@ -9396,13 +9562,13 @@ ${m.content.trimEnd()}
   }
   const toSave = isFolder ? inputs.reported : void 0;
   const savedNow = isFolder ? readSavedReport(root) : { files: [] };
-  const savedPresent = savedNow.files.filter((f) => fs10.existsSync(f));
+  const savedPresent = savedNow.files.filter((f) => fs11.existsSync(f));
   const savedShape = { files: [...savedPresent].sort(), ...savedNow.memoryDir ? { memoryDir: savedNow.memoryDir } : {} };
   const hostsChanged = toSave !== void 0 && JSON.stringify(toSave) !== JSON.stringify(savedShape);
   if (hostsChanged && toSave) {
     writes.push({
       op: "write",
-      path: path9.join(root, COMPILED_DIR_NAME, HOSTS_FILE),
+      path: path10.join(root, COMPILED_DIR_NAME, HOSTS_FILE),
       content: `${JSON.stringify({ hosts: toSave.files, ...toSave.memoryDir ? { memoryDir: toSave.memoryDir } : {} }, null, 2)}
 `
     });
@@ -9444,27 +9610,27 @@ ${m.content.trimEnd()}
   if (indexHashChanged && !isFolder && !hostRecompiled && !accepted.includes(indexRel)) accepted.push(indexRel);
   if (indexHashChanged && isFolder && !indexChanged) {
     accepted.push(indexRel);
-    copies.push({ op: "copy", from: path9.join(root, indexRel), to: path9.join(root, COMPILED_DIR_NAME, bakDirFor(indexRel), `${indexRel}.bak`), content: indexContent });
+    copies.push({ op: "copy", from: path10.join(root, indexRel), to: path10.join(root, COMPILED_DIR_NAME, bakDirFor(indexRel), `${indexRel}.bak`), content: indexContent });
   }
-  const graphMissing = existing && !fs10.existsSync(path9.join(root, COMPILED_DIR_NAME, GRAPH_FILE_NAME));
+  const graphMissing = existing && !fs11.existsSync(path10.join(root, COMPILED_DIR_NAME, GRAPH_FILE_NAME));
   const changed = !broken && (writes.length > 0 || moveOps.length > 0 || deleteOps.length > 0 || manifestSourcesChanged || indexHashChanged || renamed !== void 0 || graphMissing);
   if (changed) {
-    const gitignore = path9.join(root, COMPILED_DIR_NAME, ".gitignore");
+    const gitignore = path10.join(root, COMPILED_DIR_NAME, ".gitignore");
     const stale = hostsChanged && !(readIfExists(gitignore) ?? "").split(/\r?\n/).includes("hosts.json");
-    if (!existing || !fs10.existsSync(gitignore) || stale) copies.unshift({ op: "write", path: gitignore, content: BOOKKEEPING_GITIGNORE });
+    if (!existing || !fs11.existsSync(gitignore) || stale) copies.unshift({ op: "write", path: gitignore, content: BOOKKEEPING_GITIGNORE });
     const newContentByFile = new Map(newRouted.map((r) => [r.m.file, r.content]));
     const routedEntries = mergedSources.flatMap((s) => s.routed);
     const units = routedEntries.flatMap((r) => {
-      const content = newContentByFile.get(r.file) ?? readIfExists(path9.join(root, r.file)) ?? "";
+      const content = newContentByFile.get(r.file) ?? readIfExists(path10.join(root, r.file)) ?? "";
       return unitsOf({ name: r.name, file: r.file }, content);
     });
     const triggers = new Map(routedEntries.map((r) => [r.name, r.triggers]));
     const graph = serializeGraph(buildGraph(buildSearchIndex(units, triggers)));
-    writes.push({ op: "write", path: path9.join(root, COMPILED_DIR_NAME, GRAPH_FILE_NAME), content: `${JSON.stringify(graph, null, 1)}
+    writes.push({ op: "write", path: path10.join(root, COMPILED_DIR_NAME, GRAPH_FILE_NAME), content: `${JSON.stringify(graph, null, 1)}
 ` });
     writes.push({
       op: "write",
-      path: path9.join(root, COMPILED_DIR_NAME, "manifest.json"),
+      path: path10.join(root, COMPILED_DIR_NAME, "manifest.json"),
       content: `${JSON.stringify(manifest, null, 2)}
 `
     });
@@ -9475,7 +9641,7 @@ ${m.content.trimEnd()}
   const seenCopies = /* @__PURE__ */ new Set();
   const uniqueCopies = copies.filter((op) => {
     if (op.op !== "copy") return true;
-    const key2 = `${path9.resolve(op.from)}\0${path9.resolve(op.to)}`;
+    const key2 = `${path10.resolve(op.from)}\0${path10.resolve(op.to)}`;
     if (seenCopies.has(key2)) return false;
     seenCopies.add(key2);
     return true;
@@ -9483,10 +9649,10 @@ ${m.content.trimEnd()}
   const bookkeeping = [];
   if (renamed) {
     for (const dirName of ["original", "previous"]) {
-      const fromBak = path9.join(root, COMPILED_DIR_NAME, dirName, `${renamed.from}.bak`);
-      const toBak = path9.join(root, COMPILED_DIR_NAME, dirName, `${renamed.to}.bak`);
-      if (!fs10.existsSync(fromBak)) continue;
-      const taken2 = fs10.existsSync(toBak) || uniqueCopies.some((op) => op.op === "copy" && path9.resolve(op.to) === path9.resolve(toBak));
+      const fromBak = path10.join(root, COMPILED_DIR_NAME, dirName, `${renamed.from}.bak`);
+      const toBak = path10.join(root, COMPILED_DIR_NAME, dirName, `${renamed.to}.bak`);
+      if (!fs11.existsSync(fromBak)) continue;
+      const taken2 = fs11.existsSync(toBak) || uniqueCopies.some((op) => op.op === "copy" && path10.resolve(op.to) === path10.resolve(toBak));
       if (!taken2) bookkeeping.push({ op: "move", from: fromBak, to: toBak });
       else if (dirName === "previous") bookkeeping.push({ op: "delete", path: fromBak });
     }
@@ -9570,16 +9736,16 @@ function rewriteImportLines(content, moves, hostAbs, root) {
     if (!m) return line;
     const [, prefix, sep, name, rest] = m;
     const raw = line.trim().slice(1).split(/\s/)[0];
-    const target = raw.startsWith("~/") ? path9.join(os3.homedir(), raw.slice(2)) : path9.resolve(path9.dirname(hostAbs), raw);
+    const target = raw.startsWith("~/") ? path10.join(os3.homedir(), raw.slice(2)) : path10.resolve(path10.dirname(hostAbs), raw);
     if (!containedIn(root, target)) return line;
-    const rel = path9.relative(realRoot, pathKey(realPathOf(target)));
-    const newRel = movedByKey.get(rel.split(path9.sep).join("/"));
+    const rel = path10.relative(realRoot, pathKey(realPathOf(target)));
+    const newRel = movedByKey.get(rel.split(path10.sep).join("/"));
     if (!newRel) return line;
     return `${prefix}${ALWAYS_ON_DIR_NAME}${sep}${name}${rest ?? ""}`;
   }).join("\n");
 }
 function unrewriteImportLines(content, hostAbs, root) {
-  const alwaysOn = path9.join(root, ALWAYS_ON_DIR_NAME);
+  const alwaysOn = path10.join(root, ALWAYS_ON_DIR_NAME);
   return content.split(/\r?\n/).map((line) => {
     const m = /^(\s*@\S*([\\/]))([\p{L}\p{M}\p{N}_.\-]+\.md)(\s.*)?$/u.exec(line);
     if (!m) return line;
@@ -9588,12 +9754,12 @@ function unrewriteImportLines(content, hostAbs, root) {
     const stripped = prefix.slice(0, -(ALWAYS_ON_DIR_NAME.length + 1));
     if (!/[\\/]$/.test(stripped)) return line;
     const raw = line.trim().slice(1).split(/\s/)[0];
-    const target = raw.startsWith("~/") ? path9.join(os3.homedir(), raw.slice(2)) : path9.resolve(path9.dirname(hostAbs), raw);
+    const target = raw.startsWith("~/") ? path10.join(os3.homedir(), raw.slice(2)) : path10.resolve(path10.dirname(hostAbs), raw);
     return containedIn(alwaysOn, target) ? `${stripped}${name}${rest ?? ""}` : line;
   }).join("\n");
 }
 function hashedPath(p) {
-  return path9.join(realPathOf(path9.dirname(p)), path9.basename(p));
+  return path10.join(realPathOf(path10.dirname(p)), path10.basename(p));
 }
 function hashOperations(operations) {
   const canonical = operations.map((op) => {
@@ -9602,17 +9768,17 @@ function hashOperations(operations) {
     if (op.op === "write") return { op: op.op, path: hashedPath(op.path), content: op.content };
     return { op: op.op, path: hashedPath(op.path) };
   });
-  return createHash2("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
+  return createHash3("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
 }
 function refuseSymlink(abs, what) {
   try {
-    if (fs10.lstatSync(abs).isSymbolicLink()) throw new FolderError(`${what} is a symlink (${abs}); refusing to write through it`);
+    if (fs11.lstatSync(abs).isSymbolicLink()) throw new FolderError(`${what} is a symlink (${abs}); refusing to write through it`);
   } catch (err) {
     if (err instanceof FolderError) throw err;
   }
 }
 function containedInEither(root, extra, abs) {
-  return containedIn(root, abs) || extra.some((e) => path9.resolve(abs) === path9.resolve(e));
+  return containedIn(root, abs) || extra.some((e) => path10.resolve(abs) === path10.resolve(e));
 }
 function applyFolderPlan(plan, options = {}) {
   if (plan.secrets.length > 0 && !options.allowSecrets) {
@@ -9622,27 +9788,27 @@ function applyFolderPlan(plan, options = {}) {
     );
   }
   const extraRoot = (plan.hostImportRewrites ?? []).map((r) => r.file);
-  const originalDir = path9.join(plan.root, COMPILED_DIR_NAME, "original");
+  const originalDir = path10.join(plan.root, COMPILED_DIR_NAME, "original");
   for (const op of plan.operations) {
     const target = op.op === "copy" ? op.to : op.op === "write" ? op.path : void 0;
-    if (target && containedIn(originalDir, target) && fs10.existsSync(target)) {
+    if (target && containedIn(originalDir, target) && fs11.existsSync(target)) {
       throw new FolderError(`refusing to apply: ${target} already exists, and it is the backup undo restores from; nothing was changed`);
     }
   }
   const takeBack = [];
   const priorOf = (abs) => {
     try {
-      return fs10.statSync(abs).isFile() ? fs10.readFileSync(abs) : void 0;
+      return fs11.statSync(abs).isFile() ? fs11.readFileSync(abs) : void 0;
     } catch {
       return void 0;
     }
   };
-  const putBack = (abs, prior) => () => prior === void 0 ? fs10.rmSync(abs, { force: true }) : fs10.writeFileSync(abs, prior);
+  const putBack = (abs, prior) => () => prior === void 0 ? fs11.rmSync(abs, { force: true }) : fs11.writeFileSync(abs, prior);
   const makeDir = (dir) => {
     const made = [];
-    for (let d = dir; !fs10.existsSync(d) && path9.dirname(d) !== d; d = path9.dirname(d)) made.push(d);
-    fs10.mkdirSync(dir, { recursive: true });
-    for (const d of made.reverse()) takeBack.push(() => fs10.rmdirSync(d));
+    for (let d = dir; !fs11.existsSync(d) && path10.dirname(d) !== d; d = path10.dirname(d)) made.push(d);
+    fs11.mkdirSync(dir, { recursive: true });
+    for (const d of made.reverse()) takeBack.push(() => fs11.rmdirSync(d));
   };
   try {
     for (const op of plan.operations) {
@@ -9650,26 +9816,26 @@ function applyFolderPlan(plan, options = {}) {
         const target = op.op === "copy" ? op.to : op.path;
         refuseSymlink(target, target);
         if (!containedInEither(plan.root, extraRoot, target)) throw new FolderError(`refusing to write outside the workspace: ${target}`);
-        makeDir(path9.dirname(target));
+        makeDir(path10.dirname(target));
         takeBack.push(putBack(target, priorOf(target)));
-        fs10.writeFileSync(target, op.content, "utf8");
+        fs11.writeFileSync(target, op.content, "utf8");
       } else if (op.op === "move") {
         refuseSymlink(op.to, op.to);
         if (!containedInEither(plan.root, extraRoot, op.to) || !containedInEither(plan.root, extraRoot, op.from)) {
           throw new FolderError(`refusing to move outside the workspace: ${op.from} -> ${op.to}`);
         }
-        makeDir(path9.dirname(op.to));
+        makeDir(path10.dirname(op.to));
         const priorTo = priorOf(op.to);
         const { from, to } = op;
-        fs10.renameSync(from, to);
+        fs11.renameSync(from, to);
         takeBack.push(() => {
-          fs10.renameSync(to, from);
-          if (priorTo !== void 0) fs10.writeFileSync(to, priorTo);
+          fs11.renameSync(to, from);
+          if (priorTo !== void 0) fs11.writeFileSync(to, priorTo);
         });
       } else {
         if (!containedInEither(plan.root, extraRoot, op.path)) throw new FolderError(`refusing to delete outside the workspace: ${op.path}`);
         takeBack.push(putBack(op.path, priorOf(op.path)));
-        fs10.rmSync(op.path, { force: true });
+        fs11.rmSync(op.path, { force: true });
       }
     }
   } catch (err) {
@@ -9697,7 +9863,7 @@ function samePath(a, b) {
 }
 function hostRestoreRefusal(root, backup) {
   const host = backup.abs;
-  if (!/\.md$/i.test(path9.basename(host))) {
+  if (!/\.md$/i.test(path10.basename(host))) {
     return `manifest.json names ${host}, which is not a markdown file`;
   }
   if (backup.backupFile !== encodeAbsolutePath(host)) return "manifest.json names a backup that is not the one apply writes for that file";
@@ -9707,14 +9873,14 @@ function hostRestoreRefusal(root, backup) {
     const m = /^\s*@(\S+)/.exec(line);
     if (!m) return false;
     const named = m[1];
-    const expanded = named.startsWith("~/") || named.startsWith("~\\") ? path9.join(os3.homedir(), named.slice(2)) : named;
-    return containedIn(root, path9.isAbsolute(expanded) ? expanded : path9.resolve(path9.dirname(host), expanded));
+    const expanded = named.startsWith("~/") || named.startsWith("~\\") ? path10.join(os3.homedir(), named.slice(2)) : named;
+    return containedIn(root, path10.isAbsolute(expanded) ? expanded : path10.resolve(path10.dirname(host), expanded));
   });
   if (!importsFromHere) return `${host} imports no file from this folder, so there is nothing of this folder's to put back in it`;
   return void 0;
 }
 function refuseOutside(plan) {
-  const ok = (p) => containedIn(plan.root, p) || (plan.hostRestored ?? []).some((h) => path9.resolve(p) === path9.resolve(h));
+  const ok = (p) => containedIn(plan.root, p) || (plan.hostRestored ?? []).some((h) => path10.resolve(p) === path10.resolve(h));
   for (const op of plan.operations) {
     const bad = (op.op === "move" || op.op === "copy" ? [op.from, op.to] : [op.path]).find((p) => !ok(p));
     if (bad) throw new FolderError(`undo refused: ${COMPILED_DIR_NAME}/manifest.json names a path outside this folder (${bad}). Nothing was changed.`);
@@ -9736,52 +9902,57 @@ function undoRefusal(plan) {
     parts.push("this workspace was re-applied since the first apply, and undo restores the originals from before the first apply, so every change folded in since would be discarded");
   }
   if (parts.length === 0) return void 0;
-  return `undo refused: ${parts.join("; ")}. Copy what you want to keep out of those files first (nothing changes until undo runs), or pass --force: undo then copies the current files to ${UNDO_BACKUPS_LABEL} first, so the discarded changes can still be read.`;
+  return `undo refused: ${parts.join("; ")}. Copy what you want to keep out of those files first (nothing changes until undo runs), or pass --force: undo then copies the current files to ${undoBackupsLabel()} first, so the discarded changes can still be read.`;
 }
-var UNDO_BACKUPS_LABEL = "~/.claude/minnimemory/undo-backups/";
+function undoBackupsLabel() {
+  const dir = path10.join(hostConfigDir(), "minnimemory", "undo-backups");
+  const rel = path10.relative(os3.homedir(), dir);
+  const shown = rel && !rel.startsWith("..") && !path10.isAbsolute(rel) ? `~/${rel}` : dir;
+  return `${shown.split(path10.sep).join("/")}/`;
+}
 function backupBeforeForcedUndo(plan, now = /* @__PURE__ */ new Date()) {
-  const dest = path9.join(hostConfigDir(), "minnimemory", "undo-backups", now.toISOString().replace(/[:.]/g, "-"));
-  const bookkeeping = path9.join(plan.root, COMPILED_DIR_NAME);
+  const dest = path10.join(hostConfigDir(), "minnimemory", "undo-backups", now.toISOString().replace(/[:.]/g, "-"));
+  const bookkeeping = path10.join(plan.root, COMPILED_DIR_NAME);
   const files = /* @__PURE__ */ new Set();
   const collect = (abs) => {
     if (abs === bookkeeping || containedIn(bookkeeping, abs)) return;
     let st;
     try {
-      st = fs10.lstatSync(abs);
+      st = fs11.lstatSync(abs);
     } catch {
       return;
     }
-    if (st.isDirectory()) for (const e of fs10.readdirSync(abs)) collect(path9.join(abs, e));
-    else if (st.isFile()) files.add(path9.resolve(abs));
+    if (st.isDirectory()) for (const e of fs11.readdirSync(abs)) collect(path10.join(abs, e));
+    else if (st.isFile()) files.add(path10.resolve(abs));
   };
   for (const op of plan.operations) if (op.op === "write" || op.op === "delete") collect(op.path);
   if (files.size === 0) return void 0;
   for (const abs of files) {
-    const rel = containedIn(plan.root, abs) ? path9.relative(plan.root, abs) : path9.join("outside", abs.replace(/[^a-zA-Z0-9._-]/g, "-"));
-    fs10.mkdirSync(path9.dirname(path9.join(dest, rel)), { recursive: true });
-    fs10.copyFileSync(abs, path9.join(dest, rel));
+    const rel = containedIn(plan.root, abs) ? path10.relative(plan.root, abs) : path10.join("outside", abs.replace(/[^a-zA-Z0-9._-]/g, "-"));
+    fs11.mkdirSync(path10.dirname(path10.join(dest, rel)), { recursive: true });
+    fs11.copyFileSync(abs, path10.join(dest, rel));
   }
   return dest;
 }
 function planFolderUndo(root, manifest) {
   if (!manifest) return { kind: "none" };
-  const originalDir = path9.join(root, COMPILED_DIR_NAME, "original");
+  const originalDir = path10.join(root, COMPILED_DIR_NAME, "original");
   const operations = [];
   const missing = [];
   const wantBackup = (rel) => {
-    const bak = path9.join(originalDir, `${rel}.bak`);
+    const bak = path10.join(originalDir, `${rel}.bak`);
     const content = readIfExists(bak);
     if (content === void 0 || content.includes(LIST_START)) missing.push(rel);
-    else operations.push({ op: "write", path: path9.join(root, rel), content });
+    else operations.push({ op: "write", path: path10.join(root, rel), content });
   };
   const indexIsASource = manifest.sources.some((s) => s.origin === manifest.index.file);
   if (!manifest.index.created && !indexIsASource) wantBackup(manifest.index.file);
   for (const s of manifest.sources) {
     if (s.compiled) {
       wantBackup(s.origin);
-      if (s.file !== s.origin) operations.push({ op: "delete", path: path9.join(root, s.file) });
+      if (s.file !== s.origin) operations.push({ op: "delete", path: path10.join(root, s.file) });
     } else if (s.origin !== s.file) {
-      operations.push({ op: "move", from: path9.join(root, s.file), to: path9.join(root, s.origin) });
+      operations.push({ op: "move", from: path10.join(root, s.file), to: path10.join(root, s.origin) });
     }
   }
   const hostBackups = [];
@@ -9789,22 +9960,22 @@ function planFolderUndo(root, manifest) {
   for (const backup of manifest.hostImportBackups ?? (manifest.hostImportBackup ? [manifest.hostImportBackup] : [])) {
     const why = hostRestoreRefusal(root, backup);
     if (why) {
-      notes.push(`${path9.basename(backup.abs)} was not restored: ${why}`);
+      notes.push(`${path10.basename(backup.abs)} was not restored: ${why}`);
     } else {
-      const content = readIfExists(path9.join(originalDir, backup.backupFile));
+      const content = readIfExists(path10.join(originalDir, backup.backupFile));
       const current2 = readIfExists(backup.abs);
       if (content === void 0) missing.push(backup.abs);
       else hostBackups.push({ abs: backup.abs, content: current2 === void 0 ? content : withEol(unrewriteImportLines(current2, backup.abs, root), eolOf(current2)) });
     }
   }
   if (missing.length > 0) return { kind: "missing-original", files: missing };
-  const indexAbs = path9.join(root, manifest.index.file);
-  const restoredIndex = operations.find((o) => o.op === "write" && path9.resolve(o.path) === path9.resolve(indexAbs));
-  const addedLater = new Set(manifest.sources.filter((s) => s.addedAfterFirstApply).map((s) => path9.resolve(root, s.origin)));
+  const indexAbs = path10.join(root, manifest.index.file);
+  const restoredIndex = operations.find((o) => o.op === "write" && path10.resolve(o.path) === path10.resolve(indexAbs));
+  const addedLater = new Set(manifest.sources.filter((s) => s.addedAfterFirstApply).map((s) => path10.resolve(root, s.origin)));
   if (restoredIndex && addedLater.size > 0) {
-    const unlisted = operations.filter((o) => o.op === "move" && addedLater.has(path9.resolve(o.to)) && path9.dirname(path9.resolve(o.to)) === path9.resolve(path9.dirname(indexAbs))).map((o) => path9.basename(o.to)).filter((name) => !new RegExp(`(^|[^A-Za-z0-9_.-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(restoredIndex.content));
+    const unlisted = operations.filter((o) => o.op === "move" && addedLater.has(path10.resolve(o.to)) && path10.dirname(path10.resolve(o.to)) === path10.resolve(path10.dirname(indexAbs))).map((o) => path10.basename(o.to)).filter((name) => !new RegExp(`(^|[^A-Za-z0-9_.-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(restoredIndex.content));
     for (const s of manifest.sources) {
-      if (!s.addedAfterFirstApply || s.file !== s.origin || !fs10.existsSync(path9.join(root, s.file))) continue;
+      if (!s.addedAfterFirstApply || s.file !== s.origin || !fs11.existsSync(path10.join(root, s.file))) continue;
       if (!restoredIndex.content.includes(s.file)) unlisted.push(s.file);
     }
     if (unlisted.length > 0) {
@@ -9814,45 +9985,45 @@ function planFolderUndo(root, manifest) {
   const edited = [];
   for (const s of manifest.sources) {
     if (s.compiled) {
-      const current2 = readIfExists(path9.join(root, s.file));
+      const current2 = readIfExists(path10.join(root, s.file));
       if (current2 !== void 0 && hash(normalised2(current2)) !== s.hash) edited.push(s.file);
     }
     for (const r of s.routed) {
-      const abs = path9.join(root, r.file);
+      const abs = path10.join(root, r.file);
       const content = readIfExists(abs);
       if (content === void 0) continue;
       if (driftHash(content) !== r.hash) edited.push(r.file);
       operations.push({ op: "delete", path: abs });
     }
   }
-  const reapplied = fs10.existsSync(path9.join(root, COMPILED_DIR_NAME, "previous"));
-  if (manifest.index.created) operations.push({ op: "delete", path: path9.join(root, manifest.index.file) });
+  const reapplied = fs11.existsSync(path10.join(root, COMPILED_DIR_NAME, "previous"));
+  if (manifest.index.created) operations.push({ op: "delete", path: path10.join(root, manifest.index.file) });
   for (const b of hostBackups) operations.push({ op: "write", path: b.abs, content: b.content });
-  operations.push({ op: "delete", path: path9.join(root, COMPILED_DIR_NAME) });
+  operations.push({ op: "delete", path: path10.join(root, COMPILED_DIR_NAME) });
   const leaving = new Set(
-    operations.flatMap((o) => o.op === "delete" ? [path9.resolve(o.path)] : o.op === "move" ? [path9.resolve(o.from)] : [])
+    operations.flatMap((o) => o.op === "delete" ? [path10.resolve(o.path)] : o.op === "move" ? [path10.resolve(o.from)] : [])
   );
   const allLeaving = (dir) => {
     let entries2;
     try {
-      entries2 = fs10.readdirSync(dir, { withFileTypes: true });
+      entries2 = fs11.readdirSync(dir, { withFileTypes: true });
     } catch {
       return false;
     }
     return entries2.every((e) => {
-      const abs = path9.resolve(dir, e.name);
+      const abs = path10.resolve(dir, e.name);
       return leaving.has(abs) || e.isDirectory() && allLeaving(abs);
     });
   };
-  const dirsToClean = /* @__PURE__ */ new Set([path9.join(root, ALWAYS_ON_DIR_NAME), path9.join(root, ON_DEMAND_DIR_NAME), path9.join(root, manifest.routedDir)]);
+  const dirsToClean = /* @__PURE__ */ new Set([path10.join(root, ALWAYS_ON_DIR_NAME), path10.join(root, ON_DEMAND_DIR_NAME), path10.join(root, manifest.routedDir)]);
   for (const abs of dirsToClean) {
-    if (fs10.existsSync(abs) && allLeaving(abs)) {
+    if (fs11.existsSync(abs) && allLeaving(abs)) {
       operations.push({ op: "delete", path: abs });
-      leaving.add(path9.resolve(abs));
+      leaving.add(path10.resolve(abs));
     }
   }
-  const routedParent = path9.dirname(path9.join(root, manifest.routedDir));
-  if (routedParent !== root && path9.basename(routedParent) === ".claude" && fs10.existsSync(routedParent) && allLeaving(routedParent)) {
+  const routedParent = path10.dirname(path10.join(root, manifest.routedDir));
+  if (routedParent !== root && path10.basename(routedParent) === ".claude" && fs11.existsSync(routedParent) && allLeaving(routedParent)) {
     operations.push({ op: "delete", path: routedParent });
   }
   return restore({ root, operations, edited, reapplied, hostRestored: hostBackups.length > 0 ? hostBackups.map((b) => b.abs) : void 0, notes: notes.length > 0 ? notes : void 0 });
@@ -9860,7 +10031,7 @@ function planFolderUndo(root, manifest) {
 function listBackups(dir, prefix = "") {
   let entries2;
   try {
-    entries2 = fs10.readdirSync(path9.join(dir, prefix), { withFileTypes: true });
+    entries2 = fs11.readdirSync(path10.join(dir, prefix), { withFileTypes: true });
   } catch {
     return [];
   }
@@ -9871,34 +10042,34 @@ function listBackups(dir, prefix = "") {
   });
 }
 function planLostManifestUndo(root) {
-  const compiledDir = path9.join(root, COMPILED_DIR_NAME);
-  const originalDir = path9.join(compiledDir, "original");
+  const compiledDir = path10.join(root, COMPILED_DIR_NAME);
+  const originalDir = path10.join(compiledDir, "original");
   const { restorable, kept } = lostManifestBackups(root);
   if (restorable.length === 0 && kept.length === 0) return { kind: "none" };
   if (restorable.length === 0) return { kind: "kept-only", kept: kept.map((rel) => `${COMPILED_DIR_NAME}/original/${rel}`) };
   const operations = restorable.map((b) => ({ op: "write", path: b.dest, content: b.content }));
   const restored = restorable.map((b) => b.rel);
-  const reapplied = fs10.existsSync(path9.join(compiledDir, "previous"));
+  const reapplied = fs11.existsSync(path10.join(compiledDir, "previous"));
   if (kept.length === 0) {
-    for (const name of fs10.readdirSync(compiledDir)) operations.push({ op: "delete", path: path9.join(compiledDir, name) });
+    for (const name of fs11.readdirSync(compiledDir)) operations.push({ op: "delete", path: path10.join(compiledDir, name) });
     operations.push({ op: "delete", path: compiledDir });
   } else {
-    for (const name of fs10.readdirSync(compiledDir)) if (name !== "original") operations.push({ op: "delete", path: path9.join(compiledDir, name) });
-    for (const rel of restored) operations.push({ op: "delete", path: path9.join(originalDir, rel) });
+    for (const name of fs11.readdirSync(compiledDir)) if (name !== "original") operations.push({ op: "delete", path: path10.join(compiledDir, name) });
+    for (const rel of restored) operations.push({ op: "delete", path: path10.join(originalDir, rel) });
   }
-  const left = [path9.join(root, ".claude", ON_DEMAND_DIR_NAME), path9.join(root, ALWAYS_ON_DIR_NAME), path9.join(root, ON_DEMAND_DIR_NAME)].filter((d) => fs10.existsSync(d)).map((d) => toRel2(root, d));
+  const left = [path10.join(root, ".claude", ON_DEMAND_DIR_NAME), path10.join(root, ALWAYS_ON_DIR_NAME), path10.join(root, ON_DEMAND_DIR_NAME)].filter((d) => fs11.existsSync(d)).map((d) => toRel2(root, d));
   const keptBackups = kept.length > 0 ? kept.map((rel) => `${COMPILED_DIR_NAME}/original/${rel}`) : void 0;
   return restore({ root, operations, edited: [], reapplied, manifestLost: true, left, keptBackups });
 }
 function lostManifestBackups(root) {
-  const originalDir = path9.join(root, COMPILED_DIR_NAME, "original");
+  const originalDir = path10.join(root, COMPILED_DIR_NAME, "original");
   const restorable = [];
   const kept = [];
-  const knownHere = (name) => [root, path9.join(root, ALWAYS_ON_DIR_NAME), path9.join(root, ON_DEMAND_DIR_NAME)].some((d) => fs10.existsSync(path9.join(d, name)));
+  const knownHere = (name) => [root, path10.join(root, ALWAYS_ON_DIR_NAME), path10.join(root, ON_DEMAND_DIR_NAME)].some((d) => fs11.existsSync(path10.join(d, name)));
   for (const rel of listBackups(originalDir)) {
     const original = rel.slice(0, -".bak".length);
-    const content = readIfExists(path9.join(originalDir, rel));
-    const dest = path9.join(root, original);
+    const content = readIfExists(path10.join(originalDir, rel));
+    const dest = path10.join(root, original);
     const encodedShape = !original.includes("/") && /^([A-Za-z]--|-)/.test(original);
     const ours = containedIn(root, dest) && (!encodedShape || knownHere(original));
     if (content === void 0 || !ours) kept.push(rel);
@@ -9921,42 +10092,42 @@ function applyFolderUndo(plan) {
   for (const op of plan.operations) {
     if (op.op === "write") {
       refuseSymlink(op.path, op.path);
-      fs10.mkdirSync(path9.dirname(op.path), { recursive: true });
-      fs10.writeFileSync(op.path, op.content, "utf8");
+      fs11.mkdirSync(path10.dirname(op.path), { recursive: true });
+      fs11.writeFileSync(op.path, op.content, "utf8");
     } else if (op.op === "move") {
-      fs10.mkdirSync(path9.dirname(op.to), { recursive: true });
+      fs11.mkdirSync(path10.dirname(op.to), { recursive: true });
       try {
-        fs10.renameSync(op.from, op.to);
+        fs11.renameSync(op.from, op.to);
       } catch {
       }
     } else if (op.op === "delete") {
-      if (path9.basename(op.path) === COMPILED_DIR_NAME && !fs10.existsSync(path9.join(op.path, "manifest.json")) && fs10.existsSync(op.path) && !(plan.manifestLost && fs10.readdirSync(op.path).length === 0)) {
+      if (path10.basename(op.path) === COMPILED_DIR_NAME && !fs11.existsSync(path10.join(op.path, "manifest.json")) && fs11.existsSync(op.path) && !(plan.manifestLost && fs11.readdirSync(op.path).length === 0)) {
         throw new FolderError(`refusing to delete ${op.path}: no manifest.json found there`);
       }
       try {
-        const st = fs10.statSync(op.path);
-        const bookkeeping = path9.basename(op.path) === COMPILED_DIR_NAME || path9.dirname(op.path) === path9.join(plan.root, COMPILED_DIR_NAME);
-        if (st.isDirectory() && fs10.readdirSync(op.path).length > 0 && !bookkeeping) continue;
+        const st = fs11.statSync(op.path);
+        const bookkeeping = path10.basename(op.path) === COMPILED_DIR_NAME || path10.dirname(op.path) === path10.join(plan.root, COMPILED_DIR_NAME);
+        if (st.isDirectory() && fs11.readdirSync(op.path).length > 0 && !bookkeeping) continue;
       } catch {
         continue;
       }
-      fs10.rmSync(op.path, { recursive: true, force: true });
+      fs11.rmSync(op.path, { recursive: true, force: true });
     }
   }
 }
 function planOldManifestUndo(root, version) {
-  const compiledDir = path9.join(root, COMPILED_DIR_NAME);
-  const originalDir = path9.join(compiledDir, "original");
+  const compiledDir = path10.join(root, COMPILED_DIR_NAME);
+  const originalDir = path10.join(compiledDir, "original");
   let raw;
   try {
-    raw = JSON.parse(fs10.readFileSync(path9.join(compiledDir, "manifest.json"), "utf8"));
+    raw = JSON.parse(fs11.readFileSync(path10.join(compiledDir, "manifest.json"), "utf8"));
   } catch {
     return { kind: "none" };
   }
   if (version === 4) {
     const stubFile = raw.stub?.file;
     if (!stubFile) return { kind: "none" };
-    const bak = path9.join(originalDir, `${stubFile}.bak`);
+    const bak = path10.join(originalDir, `${stubFile}.bak`);
     const content = readIfExists(bak);
     if (content === void 0) return { kind: "missing-original", files: [stubFile] };
     return {
@@ -9964,7 +10135,7 @@ function planOldManifestUndo(root, version) {
       plan: {
         root,
         operations: [
-          { op: "write", path: path9.join(root, stubFile), content },
+          { op: "write", path: path10.join(root, stubFile), content },
           { op: "delete", path: compiledDir }
         ],
         edited: [],
@@ -9976,10 +10147,10 @@ function planOldManifestUndo(root, version) {
   const operations = [];
   const missing = [];
   const wantBackup = (rel) => {
-    const bak = path9.join(originalDir, `${rel}.bak`);
+    const bak = path10.join(originalDir, `${rel}.bak`);
     const content = readIfExists(bak);
     if (content === void 0) missing.push(rel);
-    else operations.push({ op: "write", path: path9.join(root, rel), content });
+    else operations.push({ op: "write", path: path10.join(root, rel), content });
   };
   if (!manifest.index.created) wantBackup(manifest.index.file);
   for (const s of manifest.sources) wantBackup(s.file);
@@ -9987,14 +10158,14 @@ function planOldManifestUndo(root, version) {
   const edited = [];
   for (const s of manifest.sources) {
     for (const r of s.routed) {
-      const abs = path9.join(root, r.file);
+      const abs = path10.join(root, r.file);
       const content = readIfExists(abs);
       if (content === void 0) continue;
       if (driftHash(content) !== r.hash) edited.push(r.file);
       operations.push({ op: "delete", path: abs });
     }
   }
-  if (manifest.index.created) operations.push({ op: "delete", path: path9.join(root, manifest.index.file) });
+  if (manifest.index.created) operations.push({ op: "delete", path: path10.join(root, manifest.index.file) });
   operations.push({ op: "delete", path: compiledDir });
   return restore({ root, operations, edited, reapplied: false });
 }
@@ -10059,10 +10230,10 @@ function renderOperations(operations, root, indent = "    ") {
   const copiesByDir = /* @__PURE__ */ new Map();
   const movesByDir = /* @__PURE__ */ new Map();
   const add = (map, from, to) => {
-    const dir = path9.posix.dirname(rel(to).split(path9.sep).join("/"));
+    const dir = path10.posix.dirname(rel(to).split(path10.sep).join("/"));
     const names = map.get(dir) ?? [];
-    const name = path9.basename(from);
-    names.push(name === path9.basename(to) ? name : `${name} -> ${path9.basename(to)}`);
+    const name = path10.basename(from);
+    names.push(name === path10.basename(to) ? name : `${name} -> ${path10.basename(to)}`);
     map.set(dir, names);
   };
   const flushCopies = () => {
@@ -10142,7 +10313,7 @@ function renderFolderPlan(plan, options) {
   lines.push(`  always-loaded, files this plan rewrites: ${formatTokens(plan.before)} -> ${formatTokens(plan.after)} tokens (${change})`);
   if (plan.verdict === "compile" && !plan.existing && plan.bounds.totalOnDemandTokens > 0) {
     lines.push(
-      `  best case: kept only on turns that open none of the moved files. Measured on another memory with an agent that can read and search, whole sessions cost 24.0% less and answers held (judge 76 of 81 vs 74 for the original; ledger 2026-10-06).`
+      currentHost() === "codex" ? `  best case: kept only on turns that open none of the moved files. Whole-session cost is not measured on Codex yet.` : `  best case: kept only on turns that open none of the moved files. Measured on another memory with an agent that can read and search, whole sessions cost 24.0% less and answers held (judge 76 of 81 vs 74 for the original; ledger 2026-10-06).`
     );
   }
   if (plan.verdict !== "sort" && !plan.existing && plan.bounds.breakEvenCarriedTokens > 0) {
@@ -10153,7 +10324,7 @@ function renderFolderPlan(plan, options) {
   lines.push(`  tokenizer: ${TOKENIZER_ID}, an offline estimate`);
   lines.push("");
   if (plan.unnamed && plan.unnamed.listed.length > 0) {
-    lines.push(`  list: ${plan.unnamed.listed.length} topic file(s) the index never named get a line of their own (${plan.unnamed.listed.map((f) => path9.basename(f)).join(", ")})`);
+    lines.push(`  list: ${plan.unnamed.listed.length} topic file(s) the index never named get a line of their own (${plan.unnamed.listed.map((f) => path10.basename(f)).join(", ")})`);
   }
   for (const w of plan.warnings) lines.push(`  warning: ${w}`);
   if (plan.secrets.length > 0) {
@@ -10237,8 +10408,8 @@ function renderFolderPlan(plan, options) {
     lines.push("");
   }
   if (diffMode === "full") {
-    const bookkeeping = path9.join(plan.root, COMPILED_DIR_NAME);
-    const diffs = plan.operations.filter((op) => !(op.op === "write" && path9.dirname(path9.resolve(op.path)) === path9.resolve(bookkeeping))).map(fileDiff).filter((d) => d !== "");
+    const bookkeeping = path10.join(plan.root, COMPILED_DIR_NAME);
+    const diffs = plan.operations.filter((op) => !(op.op === "write" && path10.dirname(path10.resolve(op.path)) === path10.resolve(bookkeeping))).map(fileDiff).filter((d) => d !== "");
     if (diffs.length > 0) {
       const body = diffs.flatMap((d) => [...d.trimEnd().split("\n").map((l) => `    ${l}`), ""]);
       lines.push("  diff:");
@@ -10277,39 +10448,45 @@ function renderFolderPlan(plan, options) {
 }
 
 // src/runtime/discoveryRecord.ts
-import fs11 from "node:fs";
-import path10 from "node:path";
+import fs12 from "node:fs";
+import path11 from "node:path";
 function discoveryRecordPath() {
-  return path10.join(hostConfigDir(), "minnimemory", "discovery.json");
+  return path11.join(hostConfigDir(), "minnimemory", "discovery.json");
 }
 function readAll() {
   try {
-    const raw = JSON.parse(fs11.readFileSync(discoveryRecordPath(), "utf8"));
+    const raw = JSON.parse(fs12.readFileSync(discoveryRecordPath(), "utf8"));
     return { version: 1, projects: raw.projects && typeof raw.projects === "object" ? raw.projects : {} };
   } catch {
     return { version: 1, projects: {} };
   }
 }
-var keyOf = (cwd) => pathKey(projectKeyRoots(cwd)[0] ?? path10.resolve(cwd));
+var keyOf = (cwd) => pathKey(projectKeyRoots(cwd)[0] ?? path11.resolve(cwd));
 function saveDiscovery(cwd, set, target, now = /* @__PURE__ */ new Date()) {
   const all = readAll();
   const key2 = keyOf(cwd);
   if (!set && all.projects[key2]) return discoveryRecordPath();
   for (const [k, e] of Object.entries(all.projects)) {
-    if (k !== key2 && !(e.project && fs11.existsSync(e.project))) delete all.projects[k];
+    if (k !== key2 && !(e.project && fs12.existsSync(e.project))) delete all.projects[k];
+  }
+  const starts = { ...all.projects[key2]?.starts ?? {} };
+  if (set) {
+    const files = [...new Set([...set.files, ...set.hostLoaded ?? []].map((f) => path11.resolve(f)))].sort();
+    starts[pathKey(path11.resolve(cwd))] = { folder: path11.resolve(cwd), files, savedAt: now.toISOString() };
   }
   all.projects[key2] = {
-    project: projectKeyRoots(cwd)[0] ?? path10.resolve(cwd),
-    ...target ? { target: path10.resolve(target) } : {},
-    ...set?.memoryDir ? { memoryDir: path10.resolve(set.memoryDir) } : {},
-    files: [...new Set((set?.files ?? []).map((f) => path10.resolve(f)))].sort(),
+    project: projectKeyRoots(cwd)[0] ?? path11.resolve(cwd),
+    ...target ? { target: path11.resolve(target) } : {},
+    ...set?.memoryDir ? { memoryDir: path11.resolve(set.memoryDir) } : {},
+    files: [...new Set((set?.files ?? []).map((f) => path11.resolve(f)))].sort(),
     source: !set || set.source === "saved" ? "terminal" : set.source,
     reported: set !== void 0,
-    savedAt: now.toISOString()
+    savedAt: now.toISOString(),
+    ...Object.keys(starts).length > 0 ? { starts } : {}
   };
   try {
-    fs11.mkdirSync(path10.dirname(discoveryRecordPath()), { recursive: true });
-    fs11.writeFileSync(discoveryRecordPath(), `${JSON.stringify(all, null, 2)}
+    fs12.mkdirSync(path11.dirname(discoveryRecordPath()), { recursive: true });
+    fs12.writeFileSync(discoveryRecordPath(), `${JSON.stringify(all, null, 2)}
 `, "utf8");
     return discoveryRecordPath();
   } catch {
@@ -10317,19 +10494,19 @@ function saveDiscovery(cwd, set, target, now = /* @__PURE__ */ new Date()) {
   }
 }
 function foreignMemoryFolderNote(cwd, folder) {
-  const rel = path10.relative(path10.join(claudeConfigDir(), "projects"), path10.resolve(folder));
-  if (!rel || rel.startsWith("..") || path10.isAbsolute(rel)) return void 0;
-  const [slug2, sub, ...rest] = rel.split(path10.sep);
+  const rel = path11.relative(path11.join(claudeConfigDir(), "projects"), path11.resolve(folder));
+  if (!rel || rel.startsWith("..") || path11.isAbsolute(rel)) return void 0;
+  const [slug2, sub, ...rest] = rel.split(path11.sep);
   if (!slug2 || sub !== "memory" || rest.length > 0) return void 0;
-  const own = new Set([path10.resolve(cwd), ...projectKeyRoots(cwd)].map((p) => claudeProjectSlug(p).toLowerCase()));
+  const own = new Set([path11.resolve(cwd), ...projectKeyRoots(cwd)].map((p) => claudeProjectSlug(p).toLowerCase()));
   if (own.has(slug2.toLowerCase())) return void 0;
-  return `warning: this is the Claude Code memory folder of another project (${slug2}), not of ${path10.resolve(cwd)}. The record was saved for ${path10.resolve(cwd)}; if you meant that project, run init from its folder.`;
+  return `warning: this is the Claude Code memory folder of another project (${slug2}), not of ${path11.resolve(cwd)}. The record was saved for ${path11.resolve(cwd)}; if you meant that project, run init from its folder.`;
 }
 function compiledFolders() {
   const found = /* @__PURE__ */ new Map();
   for (const e of Object.values(readAll().projects)) {
     for (const d of [e.project, e.target, e.memoryDir]) {
-      if (d && fs11.existsSync(path10.join(d, ".minnimemory", "manifest.json"))) found.set(pathKey(d), d);
+      if (d && fs12.existsSync(path11.join(d, ".minnimemory", "manifest.json"))) found.set(pathKey(d), d);
     }
   }
   return [...found.values()].sort();
@@ -10338,22 +10515,67 @@ function readDiscovery(cwd) {
   const all = readAll().projects;
   const own = all[keyOf(cwd)];
   if (own) return own;
-  const here = pathKey(path10.resolve(cwd));
+  const here = pathKey(path11.resolve(cwd));
   return Object.values(all).find((e) => e.memoryDir !== void 0 && pathKey(e.memoryDir) === here);
 }
 function recordedSet(cwd) {
   const e = readDiscovery(cwd);
   if (!e || e.reported === false) return void 0;
-  return { files: e.files.filter((f) => fs11.existsSync(f)), ...e.memoryDir ? { memoryDir: e.memoryDir } : {}, source: "saved", savedBy: "init" };
+  return { files: e.files.filter((f) => fs12.existsSync(f)), ...e.memoryDir ? { memoryDir: e.memoryDir } : {}, source: "saved", savedBy: "init" };
+}
+function saveStart(cwd, files, now = /* @__PURE__ */ new Date()) {
+  const all = readAll();
+  const key2 = keyOf(cwd);
+  const entry = all.projects[key2];
+  if (!entry) return;
+  const sorted = [...new Set(files.map((f) => path11.resolve(f)))].sort();
+  entry.starts = { ...entry.starts ?? {}, [pathKey(path11.resolve(cwd))]: { folder: path11.resolve(cwd), files: sorted, savedAt: now.toISOString() } };
+  try {
+    fs12.writeFileSync(discoveryRecordPath(), `${JSON.stringify(all, null, 2)}
+`, "utf8");
+  } catch {
+  }
+}
+function recordedStart(cwd) {
+  const here = pathKey(path11.resolve(cwd));
+  for (const e of Object.values(readAll().projects)) {
+    const s = e.starts?.[here];
+    if (s) return s;
+  }
+  return void 0;
+}
+function recordedCompiledFolders(cwd) {
+  const start = recordedStart(cwd);
+  if (!start) return [];
+  const found = /* @__PURE__ */ new Map();
+  for (const f of start.files) {
+    const dir = path11.dirname(f);
+    if (!found.has(pathKey(dir)) && fs12.existsSync(path11.join(dir, ".minnimemory", "manifest.json"))) found.set(pathKey(dir), dir);
+  }
+  return [...found.values()];
+}
+function unrecordedStartIn(cwd) {
+  const here = path11.resolve(cwd);
+  if (recordedStart(here)) return void 0;
+  for (const e of Object.values(readAll().projects)) {
+    if (!e.reported || !e.project) continue;
+    const rel = path11.relative(e.project, here);
+    if (rel === "" || rel.startsWith("..") || path11.isAbsolute(rel)) continue;
+    const dirs = [e.project, e.target, ...Object.values(e.starts ?? {}).flatMap((s) => s.files.map((f) => path11.dirname(f)))];
+    const compiled = /* @__PURE__ */ new Map();
+    for (const d of dirs) if (d && fs12.existsSync(path11.join(d, ".minnimemory", "manifest.json"))) compiled.set(pathKey(d), path11.resolve(d));
+    if (compiled.size > 0) return { entry: e, compiled: [...compiled.values()] };
+  }
+  return void 0;
 }
 function recordedMemoryDir(cwd) {
   const dir = readDiscovery(cwd)?.memoryDir;
-  return dir && fs11.existsSync(dir) ? dir : void 0;
+  return dir && fs12.existsSync(dir) ? dir : void 0;
 }
 
 // src/audit/doctor.ts
-import path11 from "node:path";
-import fs12 from "node:fs";
+import path12 from "node:path";
+import fs13 from "node:fs";
 function resolveConfig(partial = {}) {
   return { ...DEFAULT_CONFIG, ...partial };
 }
@@ -10362,7 +10584,7 @@ function budgetFor(workspace, partial) {
   const compiledAt = readFolderManifest(workspace.root)?.budget;
   if (compiledAt !== void 0) return compiledAt;
   const host = workspace.files.find((f) => f.kind === "host" && f.alwaysLoaded);
-  const target = workspace.pointerTarget ? workspace.files.find((f) => path11.relative(workspace.root, f.abs).split(path11.sep).join("/") === workspace.pointerTarget) : void 0;
+  const target = workspace.pointerTarget ? workspace.files.find((f) => path12.relative(workspace.root, f.abs).split(path12.sep).join("/") === workspace.pointerTarget) : void 0;
   const measured = target ?? host;
   if (measured && workspace.shape !== "memory-dir") return defaultHostBudget(measured.tokens);
   return DEFAULT_CONFIG.budget;
@@ -10423,7 +10645,7 @@ function auditWorkspace(workspace, partial = {}) {
   };
 }
 function folderInit(folder) {
-  const target = folder.split(path11.sep).join("/");
+  const target = folder.split(path12.sep).join("/");
   return shellSafe(target) ? `\`${initCommand(target)}\`` : `\`${initCommand()}\` from inside ${target}`;
 }
 function pointAtMemoryFolder(findings, workspace) {
@@ -10433,8 +10655,8 @@ function pointAtMemoryFolder(findings, workspace) {
   for (const f of findings) {
     if (!f.file.startsWith("(user)/")) continue;
     const abs = workspace.files.find((w) => w.rel === f.file)?.abs;
-    const folder = abs ? path11.dirname(abs) : void 0;
-    if (!folder || !fs12.existsSync(path11.join(folder, "MEMORY.md"))) continue;
+    const folder = abs ? path12.dirname(abs) : void 0;
+    if (!folder || !fs13.existsSync(path12.join(folder, "MEMORY.md"))) continue;
     add(
       f,
       `this file is in a memory folder your user-level CLAUDE.md imports from, which a project apply does not compile; in a terminal run ${folderInit(folder)}, then apply what it prints`
@@ -10447,8 +10669,8 @@ function doctor(target, partial = {}, discoverOptions = {}) {
 }
 
 // src/runtime/recallDir.ts
-import fs13 from "node:fs";
-import path12 from "node:path";
+import fs14 from "node:fs";
+import path13 from "node:path";
 var RecallDirError = class extends Error {
 };
 var LONG_DASH = String.fromCharCode(8212);
@@ -10458,9 +10680,9 @@ function stripMdExt(name) {
 }
 function findIndexFile(dir) {
   for (const name of LIST_FILE_NAMES) {
-    const abs = path12.join(dir, name);
+    const abs = path13.join(dir, name);
     try {
-      if (fs13.statSync(abs).isFile()) return name;
+      if (fs14.statSync(abs).isFile()) return name;
     } catch {
       continue;
     }
@@ -10470,17 +10692,17 @@ function findIndexFile(dir) {
 function topicFiles(dir, indexName) {
   let entries2;
   try {
-    entries2 = fs13.readdirSync(dir, { withFileTypes: true });
+    entries2 = fs14.readdirSync(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  return entries2.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md")).filter((e) => e.name !== indexName && e.name.toLowerCase() !== "readme.md").map((e) => ({ name: stripMdExt(e.name), file: e.name, abs: path12.join(dir, e.name) })).sort((a, b) => a.file.localeCompare(b.file));
+  return entries2.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md")).filter((e) => e.name !== indexName && e.name.toLowerCase() !== "readme.md").map((e) => ({ name: stripMdExt(e.name), file: e.name, abs: path13.join(dir, e.name) })).sort((a, b) => a.file.localeCompare(b.file));
 }
 function parseTriggers(dir, indexName) {
   const triggers = /* @__PURE__ */ new Map();
   let content;
   try {
-    content = fs13.readFileSync(path12.join(dir, indexName), "utf8");
+    content = fs14.readFileSync(path13.join(dir, indexName), "utf8");
   } catch {
     return triggers;
   }
@@ -10488,7 +10710,7 @@ function parseTriggers(dir, indexName) {
     const m = RE_HOOK_LINE.exec(raw.trim());
     if (!m) continue;
     const title = m[1] ?? "";
-    const target = stripMdExt(path12.basename((m[2] ?? "").trim()));
+    const target = stripMdExt(path13.basename((m[2] ?? "").trim()));
     const hook = (m[3] ?? "").trim();
     triggers.set(target, [title, hook]);
   }
@@ -10497,7 +10719,7 @@ function parseTriggers(dir, indexName) {
 var dirIndexCache = /* @__PURE__ */ new Map();
 function fileSignature(abs) {
   try {
-    const st = fs13.statSync(abs);
+    const st = fs14.statSync(abs);
     return `${abs}:${st.mtimeMs}:${st.size}`;
   } catch {
     return `${abs}:(missing)`;
@@ -10505,11 +10727,11 @@ function fileSignature(abs) {
 }
 function dirSignature(dir, indexName, files) {
   const parts = files.map((f) => fileSignature(f.abs));
-  if (indexName) parts.push(fileSignature(path12.join(dir, indexName)));
+  if (indexName) parts.push(fileSignature(path13.join(dir, indexName)));
   return parts.join("|");
 }
 function getDirIndex(dir) {
-  const abs = path12.resolve(dir);
+  const abs = path13.resolve(dir);
   const indexName = findIndexFile(abs);
   const files = topicFiles(abs, indexName);
   const signature = dirSignature(abs, indexName, files);
@@ -10518,10 +10740,16 @@ function getDirIndex(dir) {
   const triggers = indexName ? parseTriggers(abs, indexName) : /* @__PURE__ */ new Map();
   const units = [];
   for (const f of files) {
-    if (!containedIn(abs, f.abs)) continue;
+    let link = false;
+    try {
+      link = fs14.lstatSync(f.abs).isSymbolicLink();
+    } catch {
+      continue;
+    }
+    if (link && !containedIn(abs, f.abs)) continue;
     let content;
     try {
-      content = fs13.readFileSync(f.abs, "utf8");
+      content = fs14.readFileSync(f.abs, "utf8");
     } catch {
       continue;
     }
@@ -10532,8 +10760,8 @@ function getDirIndex(dir) {
   return index;
 }
 function recallDir(dir, query, options = {}) {
-  const abs = path12.resolve(dir);
-  if (!fs13.existsSync(abs) || !fs13.statSync(abs).isDirectory()) {
+  const abs = path13.resolve(dir);
+  if (!fs14.existsSync(abs) || !fs14.statSync(abs).isDirectory()) {
     throw new RecallDirError(`not a directory: ${abs}`);
   }
   const index = getDirIndex(abs);
@@ -10561,32 +10789,98 @@ function recallDir(dir, query, options = {}) {
 }
 
 // src/runtime/hook.ts
-import { createHash as createHash3, randomInt } from "node:crypto";
-import fs14 from "node:fs";
-import path13 from "node:path";
+import { createHash as createHash4, randomInt } from "node:crypto";
+import fs15 from "node:fs";
+import path14 from "node:path";
 var DEFAULT_MAX_TOKENS = 600;
 var HOOK_MIN_MATCHED_TERMS = 2;
 var HOOK_UNIT_MAX_TOKENS = 400;
+var HOOK_SECTION_MIN_TERMS = 3;
+var HOOK_RARE_MAX_UNITS = 10;
+var TIER_POINTER_LINE = "That section may hold the answer; read those lines only if it is not already in context.";
+function placementTier(o) {
+  const terms = o.terms.filter((t) => !WEAK_TERMS.has(t));
+  const shared = terms.filter((t) => o.unitTerms.has(t));
+  const rare = shared.filter((t) => o.df(t) <= HOOK_RARE_MAX_UNITS);
+  const named = shared.filter((t) => o.headTerms.has(t));
+  const strong = shared.length >= HOOK_SECTION_MIN_TERMS || shared.length >= HOOK_MIN_MATCHED_TERMS && (shared.length === terms.length || named.length >= HOOK_MIN_MATCHED_TERMS) || terms.length === 1 && shared.length === 1 && named.length === 1 && !o.history;
+  if (o.userHost) return strong ? "section" : "none";
+  if (backReferenceQuestion(o.prompt)) return shared.length >= HOOK_SECTION_MIN_TERMS ? "pointer" : "none";
+  if (strong) return ASKS_THE_AGENT.test(o.prompt) ? "pointer" : "section";
+  return rare.some((t) => o.headTerms.has(t)) ? "pointer" : "none";
+}
+var ASKS_THE_AGENT = /\b(?:did|do|are|were|have|had|can|could|would|will)\s+you\b|\byou\s+(?:just|did|said|changed|made|wrote|ran|added|removed|mean)\b/i;
+var WEAK_TERMS = new Set(
+  tokenize(
+    "yes no ok okay sure thanks thank please now then also just really basically actually again still maybe good great nice fine better best right wrong way thing things stuff example examples idea ideas approach option options choice difference different same new old latest version versions work works working use using used make made need needs want show tell explain mean means help look try change changes changed fix fixed allow flag support supports rule rules question answer part point case problem issue sense reason step steps mode kind type sort lot bit more less much many most few other others else anything something everything nothing think know understand understanding focused focus talk discuss go going continue keep start stop run check see give take get put set add remove write read call find do"
+  )
+);
+function backReferenceQuestion(prompt) {
+  const text2 = prompt.trim();
+  return ASKS.test(text2) && BACK_REFERENCE.test(text2) && (text2.match(/[a-z0-9]+/gi) ?? []).length <= FOLLOW_UP_MAX_WORDS;
+}
+var TRANSCRIPT_TAIL_BYTES = 512 * 1024;
+function alreadyInTranscript(transcriptPath, content) {
+  if (!transcriptPath) return false;
+  const line = content.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length >= 30 && !/["\\]/.test(l) && !l.startsWith("#")).sort((a, b) => b.length - a.length)[0];
+  if (!line) return false;
+  try {
+    const fd = fs15.openSync(transcriptPath, "r");
+    try {
+      const size = fs15.fstatSync(fd).size;
+      const len = Math.min(size, TRANSCRIPT_TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      fs15.readSync(fd, buf, 0, len, size - len);
+      let tail = buf.toString("utf8");
+      const cut = Math.max(tail.lastIndexOf('"subtype":"compact_boundary"'), tail.lastIndexOf('"type":"compacted"'));
+      if (cut >= 0) tail = tail.slice(cut);
+      return tail.includes(line.slice(0, 200));
+    } finally {
+      fs15.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
 function stampPath(stampDir, sessionId) {
   const safe = sessionId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
-  return path13.join(stampDir ?? path13.join(hostConfigDir(), "minnimemory", "hook-sessions"), `${safe}.json`);
+  return path14.join(stampDir ?? path14.join(hostConfigDir(), "minnimemory", "hook-sessions"), `${safe}.json`);
+}
+function forgetPlaced(sessionId, stampDir) {
+  const sid = (sessionId ?? "").trim();
+  if (!sid) return;
+  try {
+    fs15.rmSync(stampPath(stampDir, sid), { force: true });
+  } catch {
+  }
 }
 function unitAsFile(rel, content, tokens2) {
   return { abs: rel, rel, content, lines: content.split("\n"), tokens: tokens2, alwaysLoaded: false, kind: "onDemand" };
 }
 function readPlaced(file) {
   try {
-    const parsed = JSON.parse(fs14.readFileSync(file, "utf8"));
+    const parsed = JSON.parse(fs15.readFileSync(file, "utf8"));
     const list = parsed.placed;
     return new Set(Array.isArray(list) ? list.filter((k) => typeof k === "string") : []);
   } catch {
     return /* @__PURE__ */ new Set();
   }
 }
+function overlapsPlaced(placed, key2) {
+  if (placed.has(key2)) return true;
+  const m = /^(.*):(\d+)-(\d+)$/.exec(key2);
+  if (!m) return false;
+  const [, file, a, b] = m;
+  for (const k of placed) {
+    const p = /^(.*):(\d+)-(\d+)$/.exec(k);
+    if (p && p[1] === file && Number(a) <= Number(p[3]) && Number(b) >= Number(p[2])) return true;
+  }
+  return false;
+}
 function writePlaced(file, placed) {
   try {
-    fs14.mkdirSync(path13.dirname(file), { recursive: true });
-    fs14.writeFileSync(file, JSON.stringify({ placed: [...placed] }), "utf8");
+    fs15.mkdirSync(path14.dirname(file), { recursive: true });
+    fs15.writeFileSync(file, JSON.stringify({ placed: [...placed] }), "utf8");
   } catch {
   }
 }
@@ -10621,63 +10915,177 @@ function quoteFenceLines(body) {
 function alwaysLoadedFiles(cwd) {
   const keys = /* @__PURE__ */ new Set();
   if (!cwd) return keys;
-  for (const file of readDiscovery(path13.resolve(cwd))?.files ?? []) {
-    if (!fs14.existsSync(file)) continue;
+  for (const file of readDiscovery(path14.resolve(cwd))?.files ?? []) {
+    if (!fs15.existsSync(file)) continue;
     keys.add(pathKey(file));
-    for (const imported of resolveImports(file, path13.dirname(file), true).files) keys.add(pathKey(imported));
+    for (const imported of resolveImports(file, path14.dirname(file), true).files) keys.add(pathKey(imported));
   }
   return keys;
 }
-function resolveTarget(input, options) {
+function resolveTargets(input, options) {
   if (options.dir) {
     const phase = detectPhase(options.dir);
-    if (phase === "compiled" || phase === "memory-dir") return { dir: options.dir, phase };
-    return void 0;
+    return phase === "compiled" || phase === "memory-dir" ? [{ dir: options.dir, phase }] : [];
   }
-  const cwd = input.cwd ? path13.resolve(input.cwd) : void 0;
-  if (!cwd) return void 0;
-  if (detectPhase(cwd) === "compiled") return { dir: cwd, phase: "compiled" };
+  const cwd = input.cwd ? path14.resolve(input.cwd) : void 0;
+  if (!cwd) return [];
+  const targets = [];
+  if (detectPhase(cwd) === "compiled") targets.push({ dir: cwd, phase: "compiled" });
+  for (const dir of recordedCompiledFolders(cwd)) {
+    if (!targets.some((t) => pathKey(path14.resolve(t.dir)) === pathKey(dir))) targets.push({ dir, phase: "compiled" });
+  }
   const autoMemoryDir = recordedMemoryDir(cwd);
-  if (autoMemoryDir) return { dir: autoMemoryDir, phase: detectPhase(autoMemoryDir) === "compiled" ? "compiled" : "memory-dir" };
-  return void 0;
+  if (autoMemoryDir && pathKey(path14.resolve(autoMemoryDir)) !== pathKey(cwd)) {
+    targets.push({ dir: autoMemoryDir, phase: detectPhase(autoMemoryDir) === "compiled" ? "compiled" : "memory-dir" });
+  }
+  const codexUser = codexUserRoot();
+  if (codexUser && !targets.some((t) => pathKey(path14.resolve(t.dir)) === pathKey(codexUser))) targets.push({ dir: codexUser, phase: "compiled" });
+  return targets;
+}
+function codexUserRoot() {
+  if (currentHost() !== "codex") return void 0;
+  const dir = path14.resolve(hostConfigDir("codex"));
+  return detectPhase(dir) === "compiled" ? dir : void 0;
+}
+var TIME_WORDS = /* @__PURE__ */ new Set([
+  "when",
+  "date",
+  "dates",
+  "day",
+  "ago",
+  "since",
+  "changed",
+  "change",
+  "changes",
+  "history",
+  "changelog",
+  "last",
+  "latest",
+  "recent",
+  "recently",
+  "first",
+  "now",
+  "currently",
+  "current",
+  "status",
+  "today",
+  "yesterday",
+  "version",
+  "previously",
+  "still",
+  "yet",
+  "until",
+  "timeline"
+]);
+var STATUS_HEADING = /^(current state|current status|status|open items|changelog|change log|history|log|recent changes|incident notes|timeline)\b/i;
+function isHistoryUnit(m) {
+  if (m.kind === "entry") return true;
+  if (/(__history(_\d+)?|changelog)$/i.test(m.onDemandFile) || /changelog/i.test(m.file)) return true;
+  return m.path.some((h) => STATUS_HEADING.test(h.trim()));
+}
+function asksAboutTime(prompt) {
+  const lower = prompt.toLowerCase();
+  return /\bas of\b/.test(lower) || (lower.match(/[a-z]+/g) ?? []).some((w) => TIME_WORDS.has(w));
+}
+function bestIn(target, input, prompt, maxTokens, needed) {
+  let matches;
+  let dfMap;
+  if (target.phase === "compiled") {
+    const manifest = loadManifest(target.dir);
+    matches = recall(target.dir, manifest, prompt, { maxTokens, includeAlwaysOn: true }).matches;
+    try {
+      dfMap = getUnitIndex(target.dir, manifest, true).index.df;
+    } catch {
+      dfMap = void 0;
+    }
+  } else {
+    const loaded = alwaysLoadedFiles(input.cwd);
+    matches = recallDir(target.dir, prompt, { maxTokens }).matches.map(
+      (m) => loaded.has(pathKey(path14.join(target.dir, m.file))) ? { ...m, alwaysOn: true } : m
+    );
+    dfMap = getDirIndex(target.dir).df;
+  }
+  const df = (t) => dfMap?.get(t) ?? 0;
+  if (!asksAboutTime(prompt)) matches = [...matches.filter((m) => !isHistoryUnit(m)), ...matches.filter((m) => isHistoryUnit(m))];
+  const terms = [...new Set(tokenize(prompt))];
+  const anchored = (m) => terms.length >= HOOK_MIN_MATCHED_TERMS || !isHistoryUnit(m) && terms.every((w) => tokenize(`${m.path.join(" ")} ${m.onDemandFile}`).includes(w));
+  const covering = matches.find((m) => m.matched >= needed && (m.alwaysOn || anchored(m)));
+  if (!covering) return void 0;
+  return { match: alreadyLoaded(matches, covering, prompt) ?? covering, dir: target.dir, df };
+}
+function alreadyLoaded(matches, covering, prompt) {
+  if (covering.alwaysOn) return covering;
+  if (asksAboutTime(prompt) && isHistoryUnit(covering)) return void 0;
+  return matches.find((m) => m.alwaysOn && m.matched >= covering.matched);
+}
+var BACK_REFERENCE = /\b(that|it|this|these|those|again|both|same|above)\b/i;
+var CONTINUATION = /^(?:keep\s+(?:going|developing|working|at\s+it|it\s+up|on)|continue|carry\s+on|go\s+ahead|go\s+on|proceed|(?:resume|next)(?=[.!]?$|\s+(?:where|from|with|please|on|it)\b))(?=$|\s|[,.!;:](?![a-z0-9]))/i;
+var ASKS = /\?\s*$/;
+var ASKS_FOR_WORK = /^(?:can|could|would|will)\s+(?:you|u)\b/i;
+var FOLLOW_UP_MAX_WORDS = 8;
+function isFollowUp(prompt) {
+  const text2 = prompt.trim();
+  if (ASKS.test(text2) && !ASKS_FOR_WORK.test(text2)) return false;
+  if (!CONTINUATION.test(text2) && !(WORK_REQUEST.test(text2) && BACK_REFERENCE.test(text2))) return false;
+  return (text2.match(/[a-z0-9]+/gi) ?? []).length <= FOLLOW_UP_MAX_WORDS;
 }
 function renderHook(input, options = {}) {
   const prompt = (input.prompt ?? "").trim();
-  if (!prompt) return "";
-  const target = resolveTarget(input, options);
-  if (!target) return "";
+  if (!prompt || isFollowUp(prompt)) return "";
+  const targets = resolveTargets(input, options);
+  if (targets.length === 0) return "";
   const maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
-  let matches;
-  try {
-    if (target.phase === "compiled") {
-      const manifest = loadManifest(target.dir);
-      matches = recall(target.dir, manifest, prompt, { maxTokens, includeAlwaysOn: true }).matches;
-    } else {
-      const loaded = alwaysLoadedFiles(input.cwd);
-      matches = recallDir(target.dir, prompt, { maxTokens }).matches.map(
-        (m) => loaded.has(pathKey(path13.join(target.dir, m.file))) ? { ...m, alwaysOn: true } : m
-      );
-    }
-  } catch {
-    return "";
-  }
-  if (matches.length === 0) return "";
-  if (matches[0]?.alwaysOn) return "";
-  matches = matches.filter((m) => !m.alwaysOn);
   const distinctTerms = new Set(tokenize(prompt)).size;
   const needed = Math.min(distinctTerms, Math.max(HOOK_MIN_MATCHED_TERMS, Math.ceil(distinctTerms / 2)));
-  matches = matches.filter((m) => m.matched >= needed);
-  if (matches.length === 0) return "";
-  const top = matches[0];
-  const pointerOnly = top.tokens > (options.unitMaxTokens ?? HOOK_UNIT_MAX_TOKENS);
-  matches = [top];
+  let winner;
+  for (const target2 of targets) {
+    let best;
+    try {
+      best = bestIn(target2, input, prompt, maxTokens, needed);
+    } catch {
+      best = void 0;
+    }
+    if (!best) continue;
+    if (targets.length === 1 || best.match.matched >= needed) {
+      winner = best;
+      break;
+    }
+  }
+  if (!winner) return "";
+  if (winner.match.alwaysOn) return "";
+  const target = { dir: winner.dir };
+  const userHost = [claudeConfigDir(), hostConfigDir("codex")].some((d) => pathKey(path14.resolve(d)) === pathKey(path14.resolve(winner.dir)));
+  const tier = placementTier({
+    prompt,
+    terms: [...new Set(tokenize(prompt))],
+    unitTerms: new Set(tokenize(`${winner.match.path.join(" ")} ${winner.match.onDemandFile} ${winner.match.content}`)),
+    // file names split on _ . - so reference_proxmox names "proxmox"
+    headTerms: new Set(tokenize(`${winner.match.path.join(" ")} ${winner.match.onDemandFile} ${winner.match.onDemandFile.replace(/[_.-]+/g, " ")}`)),
+    df: winner.df,
+    userHost,
+    history: isHistoryUnit(winner.match)
+  });
+  if (tier === "none") return "";
+  if (alreadyInTranscript(input.transcriptPath, winner.match.content)) return "";
+  const cap = options.unitMaxTokens ?? HOOK_UNIT_MAX_TOKENS;
+  const whole = winner.match;
+  const part = whole.tokens > cap ? bestPart(whole, prompt, cap) : void 0;
+  const tierPointer = tier === "pointer";
+  const top = tierPointer ? whole : part ?? whole;
+  const pointerOnly = tierPointer || top.tokens > cap;
+  const matches = [top];
   const sessionId = (input.sessionId ?? "").trim();
-  const key2 = `${top.file}:${top.startLine}-${top.endLine}`;
+  const inProject = input.cwd !== void 0 && pathKey(path14.resolve(winner.dir)) === pathKey(path14.resolve(input.cwd));
+  const key2 = `${options.dir || inProject ? "" : `${pathKey(path14.resolve(winner.dir))}|`}${top.file}:${top.startLine}-${top.endLine}`;
+  const placedKey = tierPointer ? `pointer|${key2}` : key2;
   let stamp;
+  let fileSeen = false;
   if (sessionId) {
     const file = stampPath(options.stampDir, sessionId);
     const placed = readPlaced(file);
-    if (placed.has(key2)) return "";
+    if (overlapsPlaced(placed, key2) || placed.has(placedKey)) return "";
+    const filePrefix = key2.slice(0, key2.lastIndexOf(":") + 1);
+    fileSeen = [...placed].some((k) => k.startsWith(filePrefix));
     stamp = { file, placed };
   }
   const secrets = pointerOnly ? [] : secretFindings(unitAsFile(top.onDemandFile, top.content, top.tokens));
@@ -10690,29 +11098,124 @@ function renderHook(input, options = {}) {
     return `minnimemory: the memory unit matching this prompt (${top.file}, lines ${top.startLine}-${top.endLine}) ${first.message}; not placed. Rotate it and remove it from memory.`;
   }
   if (stamp) {
-    stamp.placed.add(key2);
+    stamp.placed.add(placedKey);
     writePlaced(stamp.file, stamp.placed);
   }
-  const body = pointerOnly ? `${path13.join(target.dir, top.file)} > ${top.path.join(" > ")} (${top.tokens} tokens)
+  if (sessionId && !pointerOnly) appendUsage(winner.dir, { s: sessionId, e: "placed", f: top.file });
+  const full = path14.join(target.dir, top.file);
+  const body = tierPointer ? `${full} > ${top.path.join(" > ")} (lines ${top.startLine}-${top.endLine})` : pointerOnly ? `${full} > ${top.path.join(" > ")} (${top.tokens} tokens)
 Read the file above only if the answer is not in AlwaysOnMemory.` : options.headings ? `${matches.map((m) => `${m.onDemandFile} > ${m.path.join(" > ")} (${m.tokens} tokens)`).join("\n")}
-Read the file above only if the answer is not in AlwaysOnMemory.` : matches.map(
-    (m) => `## ${m.onDemandFile} > ${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine}, ${m.tokens} tokens, score ${m.score})
+Read the file above only if the answer is not in AlwaysOnMemory.` : matches.map((m) => `## ${m.onDemandFile} > ${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine}${part ? ` of ${whole.startLine}-${whole.endLine}` : ""})
 
-${m.content}`
-  ).join("\n\n---\n\n");
+${m.content}`).join("\n\n---\n\n");
   const code = fenceCode();
-  return `${hookOpen(code)}
+  const block = `${hookOpen(code)}
 ${quoteFenceLines(body)}
 ${hookClose(code)}`;
+  if (tierPointer) return `${block}
+${TIER_POINTER_LINE}`;
+  if (pointerOnly || options.headings) return block;
+  const others = fileSeen ? void 0 : otherSectionsLine(full, top);
+  const rest = part ? [`Rest of this section: ${full} lines ${whole.startLine}-${whole.endLine}; read it only if the part above does not answer.`] : [];
+  const tail = [...rest, ...others ? [others] : []];
+  return tail.length > 0 ? `${block}
+${tail.join("\n")}` : block;
+}
+var OTHER_SECTIONS_MAX = 6;
+function otherSections(fileText, placed) {
+  const lines = fileText.split(/\r?\n/);
+  const secs = sections(lines).filter((s) => s.level > 0);
+  const counts2 = /* @__PURE__ */ new Map();
+  for (const s of secs) counts2.set(s.level, (counts2.get(s.level) ?? 0) + 1);
+  const main = [...counts2].filter(([, n]) => n > 1).map(([level]) => level).sort((a, b) => a - b)[0];
+  if (main === void 0) return [];
+  let last = lines.length;
+  while (last > 0 && !(lines[last - 1] ?? "").trim()) last--;
+  const out = [];
+  secs.forEach((s, i) => {
+    if (s.level !== main) return;
+    const next = secs.slice(i + 1).find((x) => x.level <= main);
+    let end = next ? next.startLine - 1 : last;
+    while (end > s.startLine && !(lines[end - 1] ?? "").trim()) end--;
+    if (s.startLine <= placed.endLine && end >= placed.startLine) return;
+    out.push({ heading: s.heading, startLine: s.startLine, endLine: end });
+  });
+  return out;
+}
+function otherSectionsLine(fileAbs, placed) {
+  let text2;
+  try {
+    text2 = fs15.readFileSync(fileAbs, "utf8");
+  } catch {
+    return void 0;
+  }
+  const others = otherSections(text2, placed);
+  if (others.length === 0) return void 0;
+  const named = others.slice(0, OTHER_SECTIONS_MAX).map((s) => `${s.heading} (lines ${s.startLine}-${s.endLine})`);
+  const more = others.length > OTHER_SECTIONS_MAX ? `, and ${others.length - OTHER_SECTIONS_MAX} more` : "";
+  return `Other sections of ${fileAbs}: ${named.join(", ")}${more}.`;
+}
+var WORK_REQUEST = /^(?:can|could|would|will)\s+(?:you|u)\b|\bplease\b|^(?:add|update|fix|change|make|write|create|remove|delete|rename|refactor|implement|run|build|deploy|set|move|bump|upgrade|install|edit|replace|start|stop|commit|push|merge|migrate|test|try|retry|revert|undo|redo|check|keep|continue|go|open|close|show|use)\b/i;
+function bestPart(unit, prompt, cap) {
+  const terms = new Set(tokenize(prompt));
+  const lines = unit.content.split("\n");
+  const blocks2 = [];
+  let start = -1;
+  const close = (end) => {
+    if (start < 0) return;
+    const text2 = lines.slice(start, end + 1).join("\n");
+    const words2 = new Set(tokenize(text2));
+    blocks2.push({ from: start, to: end, text: text2, hits: [...terms].filter((t) => words2.has(t)).length, tokens: estimateTokens(text2) });
+    start = -1;
+  };
+  lines.forEach((line, i) => {
+    if (!line.trim()) return close(i - 1);
+    if (/^\s*([-*+]|\d+[.)]|\|)\s/.test(line) || /^#{1,6}\s/.test(line)) close(i - 1);
+    if (start < 0) start = i;
+  });
+  close(lines.length - 1);
+  if (blocks2.length < 2) return void 0;
+  let best = 0;
+  blocks2.forEach((b, i) => {
+    if (b.hits > blocks2[best].hits) best = i;
+  });
+  const seed = blocks2[best];
+  if (seed.hits < HOOK_MIN_MATCHED_TERMS || seed.tokens > cap) return void 0;
+  let lo = best;
+  let hi = best;
+  const span = (a, b) => lines.slice(blocks2[a].from, blocks2[b].to + 1).join("\n");
+  for (; ; ) {
+    const prev = blocks2[lo - 1];
+    const next = blocks2[hi + 1];
+    const usable = (b2) => b2 !== void 0 && b2.hits >= HOOK_MIN_MATCHED_TERMS;
+    const pick = usable(prev) && (!usable(next) || prev.hits >= next.hits) ? "prev" : usable(next) ? "next" : void 0;
+    if (!pick) break;
+    const [a, b] = pick === "prev" ? [lo - 1, hi] : [lo, hi + 1];
+    if (estimateTokens(span(a, b)) > cap) break;
+    lo = a;
+    hi = b;
+  }
+  const from = blocks2[lo].from;
+  const to = blocks2[hi].to;
+  const content = span(lo, hi);
+  const words = new Set(tokenize(content));
+  return {
+    ...unit,
+    content,
+    tokens: estimateTokens(content),
+    startLine: unit.startLine + from,
+    endLine: unit.startLine + to,
+    matched: [...terms].filter((t) => words.has(t)).length
+  };
 }
 var DRIFT_STAMP_FILE = "drift-notice.json";
 var DRIFT_PATHS_SHOWN = 5;
 function driftStampPath(cwd) {
-  return path13.join(cwd, ".minnimemory", DRIFT_STAMP_FILE);
+  return path14.join(cwd, ".minnimemory", DRIFT_STAMP_FILE);
 }
 function readDriftStamp(stampPath2) {
   try {
-    const parsed = JSON.parse(fs14.readFileSync(stampPath2, "utf8"));
+    const parsed = JSON.parse(fs15.readFileSync(stampPath2, "utf8"));
     if (parsed && typeof parsed === "object") {
       const obj = parsed;
       if (typeof obj["fingerprint"] === "string" && typeof obj["notifiedAt"] === "string") {
@@ -10725,47 +11228,50 @@ function readDriftStamp(stampPath2) {
 }
 function driftFingerprint(findings) {
   const parts = findings.map((f) => `${f.file}|${f.message}`).sort();
-  return createHash3("sha256").update(parts.join("\n")).digest("hex");
+  return createHash4("sha256").update(parts.join("\n")).digest("hex");
 }
 function compiledRootsFor(cwd) {
   const roots = [];
-  const top = path13.resolve(projectKeyRoots(cwd)[0] ?? cwd);
+  const top = path14.resolve(projectKeyRoots(cwd)[0] ?? cwd);
   const candidates = [];
-  for (let d = path13.resolve(cwd); ; d = path13.dirname(d)) {
+  for (let d = path14.resolve(cwd); ; d = path14.dirname(d)) {
     candidates.push(d);
-    if (d === top || path13.dirname(d) === d || !containedIn(top, d)) break;
+    if (d === top || path14.dirname(d) === d || !containedIn(top, d)) break;
   }
   const target = readDiscovery(cwd)?.target;
-  if (target) candidates.push(path13.resolve(target));
+  if (target) candidates.push(path14.resolve(target));
   for (const d of candidates) {
     if (!roots.some((r) => pathKey(r) === pathKey(d)) && detectPhase(d) === "compiled") roots.push(d);
   }
   const autoMemoryDir = recordedMemoryDir(cwd);
-  if (autoMemoryDir && path13.resolve(autoMemoryDir) !== path13.resolve(cwd) && detectPhase(autoMemoryDir) === "compiled") {
+  if (autoMemoryDir && path14.resolve(autoMemoryDir) !== path14.resolve(cwd) && detectPhase(autoMemoryDir) === "compiled") {
     roots.push(autoMemoryDir);
   }
+  const codexUser = codexUserRoot();
+  if (codexUser && !roots.some((r) => pathKey(r) === pathKey(codexUser))) roots.push(codexUser);
   return roots;
 }
 function driftNoticeFor(root, cwd) {
   const workspace = discover(root, {});
-  const routed = new Set((workspace.manifest?.sources ?? []).flatMap((s) => s.routed.map((r) => path13.basename(r.file))));
+  const routed = new Set((workspace.manifest?.sources ?? []).flatMap((s) => s.routed.map((r) => path14.basename(r.file))));
   const findings = auditWorkspace(workspace, { budget: 2e3, only: ["MM010"], ignore: [] }).findings.filter(
-    (f) => !(routed.has(path13.basename(f.file)) && f.message.endsWith("was edited since apply wrote it"))
+    (f) => !(routed.has(path14.basename(f.file)) && f.message.endsWith("was edited since apply wrote it"))
   );
   const stampPath2 = driftStampPath(root);
   if (findings.length === 0) {
-    if (fs14.existsSync(stampPath2)) fs14.rmSync(stampPath2);
+    if (fs15.existsSync(stampPath2)) fs15.rmSync(stampPath2);
     return void 0;
   }
   const fingerprint = driftFingerprint(findings);
   const existing = readDriftStamp(stampPath2);
   if (existing && existing.fingerprint === fingerprint) return void 0;
   const stamp = { fingerprint, notifiedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  fs14.mkdirSync(path13.dirname(stampPath2), { recursive: true });
-  fs14.writeFileSync(stampPath2, `${JSON.stringify(stamp, null, 2)}
+  fs15.mkdirSync(path14.dirname(stampPath2), { recursive: true });
+  fs15.writeFileSync(stampPath2, `${JSON.stringify(stamp, null, 2)}
 `, "utf8");
-  const isProject = path13.resolve(root) === path13.resolve(cwd);
-  const remedy = isProject ? `Run the minnimemory \`apply\` tool with target "." (this project), or \`${applyCommand(void 0)}\`, to bring the compiled memory back in step.` : `Run \`${applyCommand(void 0, root)}\` in a terminal to bring the compiled memory back in step.`;
+  const isProject = path14.resolve(root) === path14.resolve(cwd);
+  const flags = currentHost() === "codex" ? ["--host codex"] : [];
+  const remedy = isProject ? `Run the minnimemory \`apply\` tool with target "." (this project), or \`${applyCommand(void 0, void 0, { flags })}\`, to bring the compiled memory back in step.` : `Run \`${applyCommand(void 0, root, { flags })}\` in a terminal to bring the compiled memory back in step.`;
   const where = isProject ? "" : ` in ${root}`;
   const notImported = findings.filter((f) => f.message.endsWith(MM010_NOT_IMPORTED));
   if (notImported.length > 0 && notImported.length === findings.length) {
@@ -10788,11 +11294,63 @@ function driftNoticeFor(root, cwd) {
     remedy
   };
 }
+function noteSession(roots, sessionId) {
+  const sid = (sessionId ?? "").trim();
+  if (!sid || roots.length === 0) return;
+  const file = stampPath(void 0, sid).replace(/\.json$/, ".usage.json");
+  let seen = [];
+  try {
+    const parsed = JSON.parse(fs15.readFileSync(file, "utf8"));
+    if (Array.isArray(parsed)) seen = parsed.filter((k) => typeof k === "string");
+  } catch {
+    seen = [];
+  }
+  const before = seen.length;
+  for (const root of roots) {
+    const key2 = pathKey(path14.resolve(root));
+    if (seen.includes(key2)) continue;
+    appendUsage(root, { s: sid, e: "session" });
+    seen.push(key2);
+  }
+  if (seen.length === before) return;
+  try {
+    fs15.mkdirSync(path14.dirname(file), { recursive: true });
+    fs15.writeFileSync(file, JSON.stringify(seen), "utf8");
+  } catch {
+  }
+}
+var UNRECORDED_START_REMEDY = 'Call the minnimemory init tool with target "." and loaded set to the memory files you were given here, so it records what loads in this folder; until then memory compiled outside this folder is not placed into turns.';
+function unrecordedStartNotice(cwd, sessionId) {
+  const found = unrecordedStartIn(cwd);
+  if (!found) return void 0;
+  const reached = new Set(resolveTargets({ cwd }, {}).map((t) => pathKey(path14.resolve(t.dir))));
+  if (found.compiled.every((d) => reached.has(pathKey(d)))) return void 0;
+  const entry = found.entry;
+  const sid = (sessionId ?? "").trim();
+  if (sid) {
+    const file = stampPath(void 0, sid).replace(/\.json$/, ".start.json");
+    if (fs15.existsSync(file)) return void 0;
+    try {
+      fs15.mkdirSync(path14.dirname(file), { recursive: true });
+      fs15.writeFileSync(file, `${(/* @__PURE__ */ new Date()).toISOString()}
+`, "utf8");
+    } catch {
+    }
+  }
+  return {
+    fact: `minnimemory: nothing is recorded for sessions started in ${cwd.split(path14.sep).join("/")}, inside ${entry.project.split(path14.sep).join("/")}.`,
+    remedy: UNRECORDED_START_REMEDY
+  };
+}
 function renderDriftNotice(input) {
-  const cwd = input.cwd ? path13.resolve(input.cwd) : void 0;
+  const cwd = input.cwd ? path14.resolve(input.cwd) : void 0;
   if (!cwd) return "";
   try {
-    const notices = compiledRootsFor(cwd).map((root) => driftNoticeFor(root, cwd)).filter((n) => n !== void 0);
+    const roots = compiledRootsFor(cwd);
+    noteSession(roots, input.sessionId);
+    const notices = roots.map((root) => driftNoticeFor(root, cwd)).filter((n) => n !== void 0);
+    const start = unrecordedStartNotice(cwd, input.sessionId);
+    if (start) notices.push(start);
     if (notices.length === 0) return "";
     const code = fenceCode();
     const remedies = [...new Set(notices.map((n) => n.remedy))].join("\n");
@@ -10815,7 +11373,8 @@ function parseHookInput(raw) {
       return {
         prompt: typeof obj["prompt"] === "string" ? obj["prompt"] : void 0,
         cwd: typeof obj["cwd"] === "string" ? obj["cwd"] : void 0,
-        sessionId: typeof obj["session_id"] === "string" ? obj["session_id"] : void 0
+        sessionId: typeof obj["session_id"] === "string" ? obj["session_id"] : void 0,
+        ...typeof obj["transcript_path"] === "string" && obj["transcript_path"] ? { transcriptPath: obj["transcript_path"] } : {}
       };
     }
   } catch {
@@ -10824,26 +11383,26 @@ function parseHookInput(raw) {
 }
 
 // src/runtime/loadLog.ts
-import fs15 from "node:fs";
-import path14 from "node:path";
+import fs16 from "node:fs";
+import path15 from "node:path";
 var MAX_SESSIONS = 50;
 var MAX_LINES = 1e4;
 function slug(abs) {
   return abs.replace(/[^a-zA-Z0-9]/g, "-");
 }
 function loadLogPath(cwd) {
-  let abs = path14.resolve(cwd);
+  let abs = path15.resolve(cwd);
   try {
-    abs = fs15.realpathSync(abs);
+    abs = fs16.realpathSync(abs);
   } catch {
   }
-  return path14.join(claudeConfigDir(), "minnimemory", "loads", `${slug(abs)}.jsonl`);
+  return path15.join(claudeConfigDir(), "minnimemory", "loads", `${slug(abs)}.jsonl`);
 }
 function readLoadLog(cwd) {
   const file = loadLogPath(cwd);
   let raw;
   try {
-    raw = fs15.readFileSync(file, "utf8");
+    raw = fs16.readFileSync(file, "utf8");
   } catch {
     return void 0;
   }
@@ -10852,13 +11411,13 @@ function readLoadLog(cwd) {
     lines = lines.slice(-MAX_LINES);
     try {
       const tmp = `${file}.${process.pid}.tmp`;
-      fs15.writeFileSync(tmp, `${lines.join("\n")}
+      fs16.writeFileSync(tmp, `${lines.join("\n")}
 `, "utf8");
-      fs15.renameSync(tmp, file);
+      fs16.renameSync(tmp, file);
     } catch {
     }
   }
-  const log = { version: 1, cwd: path14.resolve(cwd), sessions: [], files: {} };
+  const log = { version: 1, cwd: path15.resolve(cwd), sessions: [], files: {} };
   for (const line of lines.slice(-MAX_LINES)) {
     let e;
     try {
@@ -10883,30 +11442,41 @@ function recordLoad(event, now = /* @__PURE__ */ new Date()) {
   if (!event.cwd || !event.file_path) return;
   try {
     const file = loadLogPath(event.cwd);
-    const line = { t: now.toISOString(), f: path14.resolve(event.cwd, event.file_path) };
+    const line = { t: now.toISOString(), f: path15.resolve(event.cwd, event.file_path) };
     if (event.load_reason) line.r = event.load_reason;
     if (event.memory_type) line.m = event.memory_type;
     if (event.session_id) line.s = event.session_id;
-    fs15.mkdirSync(path14.dirname(file), { recursive: true });
-    fs15.appendFileSync(file, `${JSON.stringify(line)}
+    fs16.mkdirSync(path15.dirname(file), { recursive: true });
+    fs16.appendFileSync(file, `${JSON.stringify(line)}
 `, "utf8");
   } catch {
   }
 }
 
 // src/workspace/claudeMap.ts
-import fs16 from "node:fs";
-import path15 from "node:path";
+import fs17 from "node:fs";
+import path16 from "node:path";
+var ON_DEMAND_CHAR_LIMIT = 4e4;
+var SKIP_BYTES = 4 * 1024 * 1024;
+function cutOf(e) {
+  try {
+    if (fs17.statSync(e.abs).size > SKIP_BYTES) return "skipped";
+    if (e.when !== "path-rule" && e.when !== "subfolder") return void 0;
+    return fs17.readFileSync(e.abs, "utf8").length > ON_DEMAND_CHAR_LIMIT ? "start-only" : void 0;
+  } catch {
+    return void 0;
+  }
+}
 function tokensOf(abs) {
   try {
-    return estimateTokens(fs16.readFileSync(abs, "utf8"));
+    return estimateTokens(fs17.readFileSync(abs, "utf8"));
   } catch {
     return 0;
   }
 }
-var key = (abs) => path15.resolve(abs).toLowerCase();
+var key = (abs) => path16.resolve(abs).toLowerCase();
 function buildClaudeMap(cwd, options = { machine: true }) {
-  const root = path15.resolve(options.projectRoot ?? cwd);
+  const root = path16.resolve(options.projectRoot ?? cwd);
   const entries2 = [];
   const byKey = /* @__PURE__ */ new Map();
   const add = (e) => {
@@ -10930,14 +11500,18 @@ function buildClaudeMap(cwd, options = { machine: true }) {
     for (const raw of skipped) add({ abs: raw, owner: "project", when: "import", tokens: 0, via: parent.abs, external: true });
   }
   const autoMemoryDir = void 0;
-  for (const dir of [path15.join(root, ".claude", "OnDemandMemory"), path15.join(root, "OnDemandMemory")]) {
+  for (const dir of [path16.join(root, ".claude", "OnDemandMemory"), path16.join(root, "OnDemandMemory")]) {
     let names = [];
     try {
-      names = fs16.readdirSync(dir).filter((n) => n.toLowerCase().endsWith(".md"));
+      names = fs17.readdirSync(dir).filter((n) => n.toLowerCase().endsWith(".md"));
     } catch {
       continue;
     }
-    for (const n of names.sort()) add({ abs: path15.join(dir, n), owner: "project", when: "on-demand", tokens: tokensOf(path15.join(dir, n)) });
+    for (const n of names.sort()) add({ abs: path16.join(dir, n), owner: "project", when: "on-demand", tokens: tokensOf(path16.join(dir, n)) });
+  }
+  for (const e of entries2) {
+    const cut = cutOf(e);
+    if (cut) e.cut = cut;
   }
   const log = options.machine ? readLoadLog(cwd) : void 0;
   const unaccounted = [];
@@ -10952,17 +11526,17 @@ function buildClaudeMap(cwd, options = { machine: true }) {
     }
   }
   const sessionTokens = entries2.filter((e) => e.when === "session" || e.when === "import" && !e.external).reduce((n, e) => n + e.tokens, 0);
-  const rel = (abs) => path15.relative(root, abs).split(path15.sep).join("/");
+  const rel = (abs) => path16.relative(root, abs).split(path16.sep).join("/");
   const notLoaded = report.agentsNotLoaded.filter((a) => !byKey.has(key(a.abs))).map((a) => {
-    const importPath = path15.relative(a.dir, a.abs).split(path15.sep).join("/");
+    const importPath = path16.relative(a.dir, a.abs).split(path16.sep).join("/");
     const pointerAt = [rel(a.dir), "CLAUDE.md"].filter(Boolean).join("/");
-    const reason = !a.beside ? `a CLAUDE.md on the path to this folder switches AGENTS.md off and none sits beside it; add ${pointerAt} holding @${importPath}` : namesWithoutImport(path15.join(a.dir, a.beside), a.abs) ? `${a.beside} names it but does not import it; make ${[rel(a.dir), a.beside].filter(Boolean).join("/")} hold @${importPath}` : `${a.beside} in the same folder takes its place; other coding agents read this file`;
+    const reason = !a.beside ? `a CLAUDE.md on the path to this folder switches AGENTS.md off and none sits beside it; add ${pointerAt} holding @${importPath}` : namesWithoutImport(path16.join(a.dir, a.beside), a.abs) ? `${a.beside} names it but does not import it; make ${[rel(a.dir), a.beside].filter(Boolean).join("/")} hold @${importPath}` : `${a.beside} in the same folder takes its place; other coding agents read this file`;
     return { abs: a.abs, tokens: tokensOf(a.abs), reason };
   });
   return {
     setup: setupOf(root, rel, (abs) => byKey.has(key(abs))),
     notLoaded,
-    cwd: path15.resolve(cwd),
+    cwd: path16.resolve(cwd),
     entries: entries2,
     sessionTokens,
     autoMemoryDir,
@@ -10977,7 +11551,7 @@ function setupOf(root, rel, loaded, hostName = "claude") {
   if (!hostAbs) return void 0;
   let content = "";
   try {
-    content = fs16.readFileSync(hostAbs, "utf8");
+    content = fs17.readFileSync(hostAbs, "utf8");
   } catch {
     return void 0;
   }
@@ -11002,7 +11576,7 @@ function setupOf(root, rel, loaded, hostName = "claude") {
 function namesWithoutImport(claudeAbs, targetAbs) {
   let content;
   try {
-    content = fs16.readFileSync(claudeAbs, "utf8");
+    content = fs17.readFileSync(claudeAbs, "utf8");
   } catch {
     return false;
   }
@@ -11028,7 +11602,7 @@ var WHEN_LABEL = {
 var ORDER = ["session", "import", "path-rule", "subfolder", "on-demand"];
 function claudeMapJson(map, options = {}) {
   const limit = options.limit ?? 40;
-  const show = (abs) => containedIn(map.cwd, abs) ? path15.relative(map.cwd, abs).split(path15.sep).join("/") : abs;
+  const show = (abs) => containedIn(map.cwd, abs) ? path16.relative(map.cwd, abs).split(path16.sep).join("/") : abs;
   return {
     cwd: map.cwd,
     ...map.setup ? { setup: { host: map.setup.host, pointerTo: map.setup.pointerTo, pointerNotImported: map.setup.pointerNotImported, target: map.setup.target, compiled: map.setup.compiled, routed: map.setup.routed } } : {},
@@ -11038,7 +11612,7 @@ function claudeMapJson(map, options = {}) {
       return {
         when,
         tokens: group.reduce((n, e) => n + e.tokens, 0),
-        files: group.slice(0, limit).map((e) => ({ path: show(e.abs), tokens: e.tokens, owner: e.owner })),
+        files: group.slice(0, limit).map((e) => ({ path: show(e.abs), tokens: e.tokens, owner: e.owner, ...e.cut ? { cut: e.cut } : {} })),
         more: Math.max(0, group.length - limit)
       };
     }).filter((g) => g.files.length > 0),
@@ -11067,7 +11641,7 @@ function memoryFolderMap(ws) {
 }
 function renderClaudeMap(map, options = {}) {
   const limit = options.limit ?? 40;
-  const show = (abs) => containedIn(map.cwd, abs) ? path15.relative(map.cwd, abs).split(path15.sep).join("/") : abs;
+  const show = (abs) => containedIn(map.cwd, abs) ? path16.relative(map.cwd, abs).split(path16.sep).join("/") : abs;
   const lines = ["", `  memory map for ${map.cwd}: every file Claude Code loads, by its own rules`];
   if (map.setup) lines.push("", ...setupLines(map.setup), "");
   lines.push(`  every session: ${formatTokens(map.sessionTokens)} tokens`);
@@ -11077,7 +11651,7 @@ function renderClaudeMap(map, options = {}) {
     const total = group.reduce((n, e) => n + e.tokens, 0);
     lines.push("", `  ${WHEN_LABEL[when]} (${group.length} file(s), ${formatTokens(total)} tokens)`);
     for (const e of group.slice(0, limit)) {
-      const tags = [e.owner, e.readOnly ? "read-only" : "", e.external ? "external, loads after you approve it" : "", e.seen ? `seen by Claude Code x${e.seen.count}` : "", e.notSeen ? "NOT SEEN by Claude Code" : ""].filter(Boolean).join(", ");
+      const tags = [e.owner, e.readOnly ? "read-only" : "", e.external ? "external, loads after you approve it" : "", e.seen ? `seen by Claude Code x${e.seen.count}` : "", e.notSeen ? "NOT SEEN by Claude Code" : "", e.cut === "skipped" ? "OVER 4 MiB: Claude Code skips it" : "", e.cut === "start-only" ? `OVER ${ON_DEMAND_CHAR_LIMIT.toLocaleString("en-US")} CHARACTERS: Claude Code loads only its start` : ""].filter(Boolean).join(", ");
       const via = e.via ? `  <- ${e.when === "import" ? show(e.via) : e.via}` : "";
       lines.push(`    ${show(e.abs).padEnd(56)} ${formatTokens(e.tokens).padStart(7)}  ${tags}${via}`);
     }
@@ -11109,39 +11683,621 @@ function renderClaudeMap(map, options = {}) {
   return lines.join("\n");
 }
 
+// src/runtime/install.ts
+import fs18 from "node:fs";
+import path17 from "node:path";
+function safeDirectCliPath(cliPath) {
+  const direct = directCliPath(cliPath);
+  return direct && shellSafe(direct) ? direct : void 0;
+}
+function hookCapable(host) {
+  return host === void 0 || host === "codex";
+}
+var HOOK_HOST_FLAG = " --host codex";
+function quoteArg(arg) {
+  return shellWord(arg) ?? `"${arg.replace(/"/g, '\\"')}"`;
+}
+function formatCommand(argv) {
+  return argv.map(quoteArg).join(" ");
+}
+function shellArgs(args) {
+  return args.map(quoteArg);
+}
+function npxCacheNote(plan) {
+  if (!plan.servedDirect || !/\/_npx\//.test(plan.servedDirect)) return void 0;
+  return "note: this copy lives in the npx cache, which `npm cache clean` or a newer version can remove; the registration and the hook would then stop starting. For a durable install: npm i -g minnimemory, then minnimemory install --force";
+}
+function hostConfigPath(host) {
+  if (host === "cursor") return "~/.cursor/mcp.json";
+  if (host === "windsurf") return "~/.codeium/windsurf/mcp_config.json";
+  if (host === "codex") return "~/.codex/config.toml";
+  return void 0;
+}
+function codexConfigDirOf(env) {
+  return env.codexConfigDir ?? path17.join(env.home, ".codex");
+}
+function codexRegistered(env) {
+  try {
+    return /^\s*\[mcp_servers\.minnimemory\]\s*$/m.test(fs18.readFileSync(path17.join(codexConfigDirOf(env), "config.toml"), "utf8"));
+  } catch {
+    return false;
+  }
+}
+function planInstall(options, env) {
+  const servedFlags = [];
+  if (options.write) servedFlags.push("--profile", "full", "--allow-write");
+  const codex = options.host === "codex";
+  if (codex) servedFlags.push("--host", "codex");
+  const servedDirect = safeDirectCliPath(options.cliPath);
+  const servedArgv = servedDirect ? ["node", servedDirect, "mcp", ...servedFlags] : ["npx", "-y", "minnimemory", "mcp", ...servedFlags];
+  const codexHome = codex && env.codexHome ? env.codexHome : void 0;
+  const envArgs = codexHome ? ["--env", `CODEX_HOME=${codexHome}`] : [];
+  const addArgv = codex ? ["codex", "mcp", "add", "minnimemory", ...envArgs, "--", ...servedArgv] : ["claude", "mcp", "add", "minnimemory", "-s", options.scope, "--", ...servedArgv];
+  const removeArgv = codex ? ["codex", "mcp", "remove", "minnimemory"] : ["claude", "mcp", "remove", "minnimemory", "-s", options.scope];
+  const getArgv = codex ? ["codex", "mcp", "get", "minnimemory"] : ["claude", "mcp", "get", "minnimemory"];
+  const probeArgv = codex ? ["codex", "--version"] : ["claude", "--version"];
+  const manualLine = formatCommand(addArgv);
+  const tomlSnippet = codex ? [
+    "[mcp_servers.minnimemory]",
+    `command = ${JSON.stringify(servedArgv[0])}`,
+    `args = [${servedArgv.slice(1).map((a) => JSON.stringify(a)).join(", ")}]`,
+    ...codexHome ? [`env = { CODEX_HOME = ${JSON.stringify(codexHome)} }`] : []
+  ].join("\n") : void 0;
+  const jsonSnippet = JSON.stringify(
+    {
+      mcpServers: {
+        minnimemory: {
+          command: "npx",
+          args: ["-y", "minnimemory", "mcp", ...servedFlags]
+        }
+      }
+    },
+    null,
+    2
+  );
+  const plan = {
+    scope: options.scope,
+    servedFlags,
+    servedArgv,
+    ...servedDirect ? { servedDirect } : {},
+    addArgv,
+    removeArgv,
+    getArgv,
+    probeArgv,
+    manualLine,
+    jsonSnippet,
+    ...tomlSnippet ? { tomlSnippet } : {}
+  };
+  if (options.host && options.host !== "json") {
+    const configPath = hostConfigPath(options.host);
+    if (configPath) plan.hostConfigPath = configPath;
+  }
+  return plan;
+}
+function isMissingBinary(outcome) {
+  return outcome.error !== void 0 && outcome.error.code === "ENOENT";
+}
+var DRIFT_HOOK_COMMAND = "npx -y minnimemory drift";
+function driftHookCommand(cliPath, host) {
+  const direct = safeDirectCliPath(cliPath);
+  return (direct ? `node "${direct}" drift` : DRIFT_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
+}
+var MEMORY_HOOK_COMMAND = "npx -y minnimemory hook";
+function memoryHookCommand(cliPath, host) {
+  const direct = safeDirectCliPath(cliPath);
+  return (direct ? `node "${direct}" hook` : MEMORY_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
+}
+function withoutHostFlag(command) {
+  return command.endsWith(HOOK_HOST_FLAG) ? command.slice(0, -HOOK_HOST_FLAG.length) : command;
+}
+function isMemoryHookCommand(command) {
+  if (typeof command !== "string") return false;
+  const c = withoutHostFlag(command);
+  return c === MEMORY_HOOK_COMMAND || isOwnNodeForm(c, "hook");
+}
+function registrationMatches(getOutput, plan) {
+  const norm = (s) => s.replace(/\\/g, "/").toLowerCase();
+  const command = /^\s*Command:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
+  const args = /^\s*Args:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
+  const out = norm(command ? `${command} ${args ?? ""}
+${getOutput}` : getOutput);
+  return plan.servedDirect ? out.includes(norm(plan.servedDirect)) : out.includes("npx -y minnimemory mcp");
+}
+function registeredScope(getOutput) {
+  const m = /Scope:\s*(User|Project|Local)\b/i.exec(getOutput);
+  return m ? m[1].toLowerCase() : void 0;
+}
+function isOwnNodeForm(command, verb) {
+  const m = /^node "([^"]+)" (drift|loaded|hook|read)$/.exec(command);
+  if (m === null || m[2] !== verb) return false;
+  const file = m[1];
+  return /minnimemory/i.test(file) || ownPackageAt(file);
+}
+function ownPackageAt(file) {
+  if (!path17.isAbsolute(file)) return false;
+  let dir = path17.dirname(file);
+  for (let i = 0; i < 4; i++) {
+    try {
+      const pkg = JSON.parse(fs18.readFileSync(path17.join(dir, "package.json"), "utf8"));
+      return pkg.name === "minnimemory";
+    } catch {
+      const up = path17.dirname(dir);
+      if (up === dir) return false;
+      dir = up;
+    }
+  }
+  return false;
+}
+function isDriftHookCommand(command) {
+  if (typeof command !== "string") return false;
+  const c = withoutHostFlag(command);
+  return c === DRIFT_HOOK_COMMAND || isOwnNodeForm(c, "drift");
+}
+var LOADED_HOOK_COMMAND = "npx -y minnimemory loaded";
+function loadedHookCommand(cliPath) {
+  const direct = safeDirectCliPath(cliPath);
+  return direct ? `node "${direct}" loaded` : LOADED_HOOK_COMMAND;
+}
+function isLoadedHookCommand(command) {
+  return typeof command === "string" && (command === LOADED_HOOK_COMMAND || isOwnNodeForm(command, "loaded"));
+}
+var READ_HOOK_COMMAND = "npx -y minnimemory read";
+function readHookCommand(cliPath, precise = false) {
+  const direct = safeDirectCliPath(cliPath);
+  return (direct ? `node "${direct}" read` : READ_HOOK_COMMAND) + (precise ? PRECISE_FLAG : "");
+}
+var PRECISE_FLAG = " --precise";
+function isReadHookCommand(command) {
+  if (typeof command !== "string") return false;
+  const c = command.endsWith(PRECISE_FLAG) ? command.slice(0, -PRECISE_FLAG.length) : command;
+  return c === READ_HOOK_COMMAND || isOwnNodeForm(c, "read");
+}
+function ownHooks(cliPath, host, preciseReads = false) {
+  const drift = driftHookCommand(cliPath, host);
+  const memory = memoryHookCommand(cliPath, host);
+  const loaded = loadedHookCommand(cliPath);
+  const prompt = [
+    { event: "UserPromptSubmit", command: drift, fallback: DRIFT_HOOK_COMMAND, isOurs: (c) => c === drift || isDriftHookCommand(c) },
+    { event: "UserPromptSubmit", command: memory, fallback: MEMORY_HOOK_COMMAND, isOurs: (c) => c === memory || isMemoryHookCommand(c) }
+  ];
+  if (host === "codex") return prompt;
+  const read = readHookCommand(cliPath, preciseReads);
+  return [
+    ...prompt,
+    { event: "InstructionsLoaded", command: loaded, fallback: LOADED_HOOK_COMMAND, isOurs: (c) => c === loaded || isLoadedHookCommand(c) },
+    // The usage log prints nothing, so Claude Code need not wait for it: in the background a Read
+    // costs no node start at all (about 40 ms each, measured 2026-10-27). A precise read answers
+    // the Read itself, so it must run in the foreground.
+    { event: "PostToolUse", matcher: "Read", command: read, fallback: READ_HOOK_COMMAND, isOurs: (c) => c === read || isReadHookCommand(c), async: !preciseReads }
+  ];
+}
+function hookSettingsPath(scope, env, host) {
+  const cwd = env.cwd ?? process.cwd();
+  if (host === "codex") return scope === "user" ? path17.join(codexConfigDirOf(env), "hooks.json") : path17.join(cwd, ".codex", "hooks.json");
+  if (scope === "user") return path17.join(env.configDir ?? path17.join(env.home, ".claude"), "settings.json");
+  if (scope === "project") return path17.join(cwd, ".claude", "settings.json");
+  return path17.join(cwd, ".claude", "settings.local.json");
+}
+function restartLine(host) {
+  return host === "codex" ? "Restart Codex." : "Restart Claude Code.";
+}
+var CODEX_TRUST_LINE = "important: Codex skips a hook until you trust it. Restart Codex, type /hooks and trust both minnimemory hooks, or the memory moved to OnDemandMemory/ never reaches a turn.";
+function setAsync(hk, async) {
+  if (async) {
+    if (hk["async"] === true) return false;
+    hk["async"] = true;
+    return true;
+  }
+  if (!("async" in hk)) return false;
+  delete hk["async"];
+  return true;
+}
+function ourHookObjects(entries2, isOurs) {
+  const out = [];
+  for (const entry of entries2) {
+    const inner = entry && typeof entry === "object" ? entry["hooks"] : void 0;
+    if (!Array.isArray(inner)) continue;
+    for (const hk of inner) if (hk && typeof hk === "object" && isOurs(hk["command"])) out.push(hk);
+  }
+  return out;
+}
+function ourCommandsIn(entries2, isOurs) {
+  const found = [];
+  for (const entry of entries2) {
+    if (!entry || typeof entry !== "object") continue;
+    const inner = entry["hooks"];
+    if (!Array.isArray(inner)) continue;
+    for (const h of inner) {
+      const command = h && typeof h === "object" ? h["command"] : void 0;
+      if (isOurs(command)) found.push(command);
+    }
+  }
+  return found;
+}
+function readSettings(settingsPath) {
+  if (!fs18.existsSync(settingsPath)) return {};
+  try {
+    const parsed = JSON.parse(fs18.readFileSync(settingsPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function writeSettings(settingsPath, settings) {
+  const text2 = `${JSON.stringify(settings, null, 2)}
+`;
+  const tmp = `${settingsPath}.minnimemory-${process.pid}.tmp`;
+  fs18.writeFileSync(tmp, text2, "utf8");
+  try {
+    fs18.renameSync(tmp, settingsPath);
+  } catch {
+    fs18.rmSync(tmp, { force: true });
+    fs18.writeFileSync(settingsPath, text2, "utf8");
+  }
+}
+function hooksOf(settings) {
+  const h = settings["hooks"];
+  return h && typeof h === "object" && !Array.isArray(h) ? h : void 0;
+}
+function installHook(options, env) {
+  if (options.host === "codex" && options.scope === "local") {
+    return { exitCode: 2, output: "install --hook: Codex has no local scope; use --scope user or --scope project.", path: "" };
+  }
+  const settingsPath = hookSettingsPath(options.scope, env, options.host);
+  const hooks = ownHooks(options.cliPath, options.host, options.preciseReads === true);
+  if (options.dryRun) {
+    return {
+      exitCode: 0,
+      output: hooks.map((h) => `would add the ${h.event} hook \`${h.command}\`${h.matcher ? ` (matcher ${h.matcher}${h.async ? ", in the background" : ""})` : ""} to ${settingsPath}`).join("\n"),
+      path: settingsPath
+    };
+  }
+  const settings = readSettings(settingsPath);
+  if (!settings) {
+    return { exitCode: 1, output: `install --hook: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
+  }
+  const all = hooksOf(settings) ?? {};
+  const lines = [];
+  let changed = false;
+  for (const h of hooks) {
+    const entries2 = Array.isArray(all[h.event]) ? [...all[h.event]] : [];
+    const present = ourCommandsIn(entries2, h.isOurs);
+    if (present.includes(h.command)) {
+      let flipped = false;
+      for (const hk of ourHookObjects(entries2, h.isOurs)) flipped = setAsync(hk, h.async) || flipped;
+      if (flipped) {
+        lines.push(`hook: ${h.event} \`${h.command}\` now runs ${h.async ? "in the background" : "in the foreground"} in ${settingsPath}. ${restartLine(options.host)}`);
+        all[h.event] = entries2;
+        changed = true;
+        continue;
+      }
+      lines.push(h.event === "UserPromptSubmit" ? `hook: \`${h.fallback.split(" ").pop()}\` already present in ${settingsPath}` : `hook: ${h.event} already present in ${settingsPath}`);
+      continue;
+    }
+    if (present.length > 0) {
+      for (const hk of ourHookObjects(entries2, h.isOurs)) {
+        hk["command"] = h.command;
+        setAsync(hk, h.async);
+      }
+      lines.push(`hook: updated \`${present[0]}\` -> \`${h.command}\` in ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
+    } else {
+      const entry = { ...h.matcher ? { matcher: h.matcher } : {}, hooks: [{ type: "command", command: h.command, ...h.async ? { async: true } : {} }] };
+      entries2.push(entry);
+      lines.push(`hook: added \`${h.command}\` to ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
+    }
+    all[h.event] = entries2;
+    changed = true;
+  }
+  if (changed) {
+    settings["hooks"] = all;
+    fs18.mkdirSync(path17.dirname(settingsPath), { recursive: true });
+    writeSettings(settingsPath, settings);
+  }
+  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
+}
+function removeHook(options, env) {
+  const settingsPath = hookSettingsPath(options.scope, env, options.host);
+  const hooks = ownHooks(options.cliPath, options.host, options.preciseReads === true);
+  if (options.dryRun) {
+    return {
+      exitCode: 0,
+      output: hooks.map((h) => `would remove the ${h.event} hook (\`${h.fallback}\` or its direct node form) from ${settingsPath}`).join("\n"),
+      path: settingsPath
+    };
+  }
+  if (!fs18.existsSync(settingsPath)) {
+    return { exitCode: 0, output: `hook: nothing to remove (${settingsPath} does not exist)`, path: settingsPath };
+  }
+  const settings = readSettings(settingsPath);
+  if (!settings) {
+    return { exitCode: 1, output: `install --remove: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
+  }
+  const all = hooksOf(settings);
+  const lines = [];
+  for (const h of hooks) {
+    const entries2 = all && Array.isArray(all[h.event]) ? all[h.event] : void 0;
+    const removed = entries2 ? ourCommandsIn(entries2, h.isOurs) : [];
+    if (!all || !entries2 || removed.length === 0) continue;
+    const kept = entries2.filter((entry) => {
+      if (!entry || typeof entry !== "object") return true;
+      const inner = entry["hooks"];
+      if (!Array.isArray(inner)) return true;
+      const others = inner.filter((hk) => !(hk && typeof hk === "object" && h.isOurs(hk["command"])));
+      if (others.length === 0) return false;
+      entry["hooks"] = others;
+      return true;
+    });
+    if (kept.length === 0) delete all[h.event];
+    else all[h.event] = kept;
+    lines.push(`hook: removed \`${removed[0]}\` from ${settingsPath}`);
+  }
+  if (lines.length === 0) return { exitCode: 0, output: `hook: nothing to remove in ${settingsPath}`, path: settingsPath };
+  if (all && Object.keys(all).length === 0) delete settings["hooks"];
+  writeSettings(settingsPath, settings);
+  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
+}
+function runUninstall(options, env, runner) {
+  const plan = planInstall(options, env);
+  const lines = [];
+  if (options.dryRun) {
+    lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    const hookPreview = removeHook({ ...options, dryRun: true }, env);
+    lines.push(hookPreview.output);
+    return { exitCode: 0, output: `${lines.join("\n")}
+` };
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  let exitCode = 0;
+  if (isMissingBinary(probe)) {
+    lines.push(`the ${options.host === "codex" ? "codex" : "claude"} CLI is not on PATH; skipping the MCP registration removal.`);
+  } else {
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    lines.push(`ran: ${formatCommand(plan.removeArgv)}`);
+    if (removed.code !== 0 && /no mcp server named/i.test(`${removed.stdout}
+${removed.stderr}`)) {
+      lines.push(`nothing registered as minnimemory in ${options.scope} scope`);
+    } else if (removed.code !== 0) {
+      lines.push(removed.stderr.trim());
+      exitCode = 1;
+    } else if (removed.stdout.trim()) {
+      lines.push(removed.stdout.trim());
+    }
+  }
+  const hookResult = removeHook(options, env);
+  lines.push(hookResult.output);
+  if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
+  return { exitCode, output: `${lines.join("\n")}
+` };
+}
+function selfCommand(cliPath, args) {
+  const direct = safeDirectCliPath(cliPath);
+  return direct ? `node "${direct}" ${formatCommand(args)}` : formatCommand(["npx", "-y", "minnimemory", ...args]);
+}
+function nextStep(cliPath, host, hook) {
+  const direct = safeDirectCliPath(cliPath);
+  const init = direct ? `node "${direct}" init` : "npx -y minnimemory init";
+  if (host === "codex") {
+    const next = `next: ${hook ? "with the hooks trusted, ask Codex" : "restart Codex, then ask it"} to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --host codex\` from your project (Codex's load set needs no --from-log).`;
+    return hook ? `
+${CODEX_TRUST_LINE}
+
+${next}` : next;
+  }
+  return `next: restart Claude Code, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --from-log\` from your project.`;
+}
+function withHook(options, env, lines, exitCode) {
+  if (options.hook) {
+    const hookResult = installHook(options, env);
+    lines.push(hookResult.output);
+    if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
+  }
+  if (exitCode === 0) lines.push(nextStep(options.cliPath, options.host, options.hook));
+  return { exitCode, output: `${lines.join("\n")}
+` };
+}
+function runCodexInstall(options, env, runner, plan) {
+  const lines = [];
+  if (options.dryRun) {
+    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
+    const note2 = npxCacheNote(plan);
+    if (note2) lines.push(note2);
+    return withHook(options, env, lines, 0);
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  if (isMissingBinary(probe)) {
+    lines.push(
+      "the codex CLI is not on PATH. Register minnimemory manually:",
+      "",
+      `  ${plan.manualLine}`,
+      "",
+      `or add this to ${plan.hostConfigPath ?? "~/.codex/config.toml"}:`,
+      "",
+      plan.tomlSnippet ?? ""
+    );
+    return { exitCode: 2, output: `${lines.join("\n")}
+` };
+  }
+  const registered = codexRegistered(env);
+  if (registered && !options.force) {
+    lines.push(
+      "minnimemory is already registered with Codex.",
+      `to change it: ${selfCommand(options.cliPath, ["install", "--host", "codex", "--force", ...options.write ? ["--write"] : []])}`
+    );
+    return withHook(options, env, lines, 0);
+  }
+  if (registered) {
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    if (removed.code !== 0) {
+      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
+      return { exitCode: 1, output: `${lines.join("\n")}
+` };
+    }
+  }
+  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
+  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
+  if (added.code !== 0) {
+    lines.push(added.stderr.trim());
+    return { exitCode: 1, output: `${lines.join("\n")}
+` };
+  }
+  if (added.stdout.trim()) lines.push(added.stdout.trim());
+  const note = npxCacheNote(plan);
+  if (note) lines.push(note);
+  return withHook(options, env, lines, 0);
+}
+function runInstall(options, env, runner) {
+  const plan = planInstall(options, env);
+  const lines = [];
+  if (options.hook && !hookCapable(options.host)) {
+    return { exitCode: 2, output: "--hook only applies to Claude Code and Codex\n" };
+  }
+  if (options.host === "codex") return runCodexInstall(options, env, runner, plan);
+  if (options.host) {
+    lines.push(plan.jsonSnippet);
+    if (plan.hostConfigPath) {
+      lines.push("", `config file: ${plan.hostConfigPath}`);
+    } else {
+      lines.push("", `add this under "mcpServers" in your host's MCP config file.`);
+    }
+    return { exitCode: 0, output: `${lines.join("\n")}
+` };
+  }
+  if (options.dryRun) {
+    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
+    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
+    const note2 = npxCacheNote(plan);
+    if (note2) lines.push(note2);
+    return withHook(options, env, lines, 0);
+  }
+  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
+  if (isMissingBinary(probe)) {
+    lines.push(
+      "the claude CLI is not on PATH. Register minnimemory manually:",
+      "",
+      `  ${plan.manualLine}`,
+      "",
+      "or add this to another host's MCP config:",
+      "",
+      plan.jsonSnippet
+    );
+    return { exitCode: 2, output: `${lines.join("\n")}
+` };
+  }
+  const existing = runner(plan.getArgv[0], plan.getArgv.slice(1));
+  const foundScope = existing.code === 0 ? registeredScope(existing.stdout) : void 0;
+  const otherScope = foundScope !== void 0 && foundScope !== options.scope;
+  if (otherScope) {
+    lines.push(`minnimemory is also registered at ${foundScope} scope; that registration is left as it is (Claude Code uses local, then project, then user).`);
+  }
+  const alreadyRegistered = existing.code === 0 && !otherScope;
+  const stale = alreadyRegistered && !registrationMatches(existing.stdout, plan);
+  if (alreadyRegistered && !options.force && !stale) {
+    lines.push(
+      "minnimemory is already registered.",
+      `to change it: ${selfCommand(options.cliPath, ["install", "--force", "--scope", options.scope, ...options.write ? ["--write"] : []])}`
+    );
+    return withHook(options, env, lines, 0);
+  }
+  if (alreadyRegistered) {
+    if (stale && !options.force) lines.push("minnimemory is registered with a different command; repointing it at this copy.");
+    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
+    if (removed.code !== 0) {
+      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
+      return { exitCode: 1, output: `${lines.join("\n")}
+` };
+    }
+  }
+  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
+  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
+  if (added.code !== 0) {
+    lines.push(added.stderr.trim());
+    return { exitCode: 1, output: `${lines.join("\n")}
+` };
+  }
+  if (added.stdout.trim()) lines.push(added.stdout.trim());
+  const note = npxCacheNote(plan);
+  if (note) lines.push(note);
+  return withHook(options, env, lines, 0);
+}
+
+// src/runtime/codexHookSeen.ts
+import fs19 from "node:fs";
+import path18 from "node:path";
+function codexHookSeenPath(configDir) {
+  return path18.join(configDir, "minnimemory", "codex-hook-seen");
+}
+function mtime(file) {
+  try {
+    return fs19.statSync(file).mtimeMs;
+  } catch {
+    return void 0;
+  }
+}
+function hooksFiles(configDir, projectRoot) {
+  return [path18.join(configDir, "hooks.json"), path18.join(projectRoot, ".codex", "hooks.json")];
+}
+function markCodexHookRan(configDir, cwd) {
+  const marker = codexHookSeenPath(configDir);
+  const seen = mtime(marker);
+  const newest = Math.max(0, ...hooksFiles(configDir, codexProjectRoot(cwd)).map((f) => mtime(f) ?? 0));
+  if (seen !== void 0 && seen >= newest) return;
+  fs19.mkdirSync(path18.dirname(marker), { recursive: true });
+  fs19.writeFileSync(marker, `${(/* @__PURE__ */ new Date()).toISOString()}
+`);
+}
+function registersMemoryHook(file) {
+  try {
+    const parsed = JSON.parse(fs19.readFileSync(file, "utf8"));
+    const entries2 = parsed?.hooks?.UserPromptSubmit;
+    if (!Array.isArray(entries2)) return false;
+    return entries2.some((e) => Array.isArray(e?.hooks) && e.hooks.some((h) => isMemoryHookCommand(h?.command)));
+  } catch {
+    return false;
+  }
+}
+function codexHookState(configDir, projectRoot) {
+  const files = hooksFiles(configDir, projectRoot).filter(registersMemoryHook);
+  if (files.length === 0) return { registered: false, ran: false };
+  const seen = mtime(codexHookSeenPath(configDir));
+  const newest = Math.max(...files.map((f) => mtime(f) ?? 0));
+  return { registered: true, ran: seen !== void 0 && seen >= newest };
+}
+
 // src/workspace/codexMap.ts
-import fs17 from "node:fs";
-import path16 from "node:path";
+import fs20 from "node:fs";
+import path19 from "node:path";
 function tokensOf2(abs) {
   try {
-    return estimateTokens(fs17.readFileSync(abs, "utf8"));
+    return estimateTokens(fs20.readFileSync(abs, "utf8"));
   } catch {
     return 0;
   }
 }
 function buildCodexMap(cwd, options) {
-  const root = path16.resolve(options.projectRoot);
+  const root = path19.resolve(options.projectRoot);
   const configDir = options.configDir ?? hostConfigDir("codex");
   const config = readCodexConfig(configDir, root);
-  const leaf = containedIn(root, cwd) ? path16.resolve(cwd) : root;
+  const leaf = containedIn(root, cwd) ? path19.resolve(cwd) : root;
   const chain = codexLoadedFiles(leaf, { projectRoot: root, configDir, config }).map((c) => ({ ...c, tokens: tokensOf2(c.abs) }));
-  const onChain = new Set(chain.map((c) => path16.resolve(c.abs).toLowerCase()));
-  const nested = codexNestedFiles(root, config).filter((n) => !onChain.has(path16.resolve(n.abs).toLowerCase()));
+  const onChain = new Set(chain.map((c) => path19.resolve(c.abs).toLowerCase()));
+  const nested = codexNestedFiles(root, config).filter((n) => !onChain.has(path19.resolve(n.abs).toLowerCase()));
   const onDemand = [];
-  for (const dir of [path16.join(root, "OnDemandMemory"), path16.join(root, ".claude", "OnDemandMemory")]) {
+  for (const dir of [path19.join(root, "OnDemandMemory"), path19.join(root, ".claude", "OnDemandMemory")]) {
     let names = [];
     try {
-      names = fs17.readdirSync(dir).filter((n) => n.toLowerCase().endsWith(".md"));
+      names = fs20.readdirSync(dir).filter((n) => n.toLowerCase().endsWith(".md"));
     } catch {
       continue;
     }
-    for (const n of names.sort()) onDemand.push({ abs: path16.join(dir, n), tokens: tokensOf2(path16.join(dir, n)) });
+    for (const n of names.sort()) onDemand.push({ abs: path19.join(dir, n), tokens: tokensOf2(path19.join(dir, n)) });
   }
-  const rel = (abs) => path16.relative(root, abs).split(path16.sep).join("/");
+  const rel = (abs) => path19.relative(root, abs).split(path19.sep).join("/");
   const memories = codexMemoriesDir(configDir);
   return {
     host: "codex",
-    cwd: path16.resolve(cwd),
+    cwd: path19.resolve(cwd),
     root,
     configDir,
     config,
@@ -11151,14 +12307,16 @@ function buildCodexMap(cwd, options) {
     sessionBytes: chain.filter((c) => c.layer === "project").reduce((n, c) => n + (c.loaded ? c.bytes : c.keptBytes ?? 0), 0),
     sessionTokens: chain.reduce((n, c) => n + (c.loaded ? c.tokens ?? 0 : Math.round((c.tokens ?? 0) * (c.keptBytes ?? 0) / Math.max(1, c.bytes))), 0),
     onDemand,
+    hooks: codexHookState(configDir, root),
     ...memories ? { memories } : {},
-    setup: setupOf(root, rel, (abs) => onChain.has(path16.resolve(abs).toLowerCase()), "codex")
+    setup: setupOf(root, rel, (abs) => onChain.has(path19.resolve(abs).toLowerCase()), "codex")
   };
 }
 var num = (n) => n.toLocaleString("en-US");
+var CODEX_HOOKS_NOT_RUN = "the minnimemory hooks have not run in Codex since they were registered: Codex skips a hook until you trust it. Type /hooks in Codex and trust both minnimemory hooks; until then the memory in OnDemandMemory/ never reaches a turn";
 function renderCodexMap(map, options = {}) {
   const limit = options.limit ?? 40;
-  const show = (abs) => containedIn(map.root, abs) ? path16.relative(map.root, abs).split(path16.sep).join("/") || "." : abs.replace(/\\/g, "/");
+  const show = (abs) => containedIn(map.root, abs) ? path19.relative(map.root, abs).split(path19.sep).join("/") || "." : abs.replace(/\\/g, "/");
   const capFrom = map.config.capSource === "default" ? "Codex's default" : show(map.config.capSource);
   const lines = ["", `  memory map for ${map.cwd}: every file Codex loads, by its own rules`];
   if (map.setup) lines.push("", ...setupLines(map.setup, "Codex"), "");
@@ -11190,12 +12348,13 @@ function renderCodexMap(map, options = {}) {
     );
   } else if (map.config.memoriesEnabled) lines.push("  Codex memories are on in config.toml; Codex manages them and they are not touched");
   if (!map.config.hooksEnabled) lines.push("  features.hooks is off in config.toml: the minnimemory hooks will not run until it is on");
+  else if (map.hooks.registered && !map.hooks.ran) lines.push(`  ${CODEX_HOOKS_NOT_RUN}`);
   lines.push("");
   return lines.join("\n");
 }
 function codexMapJson(map, options = {}) {
   const limit = options.limit ?? 40;
-  const show = (abs) => containedIn(map.root, abs) ? path16.relative(map.root, abs).split(path16.sep).join("/") || "." : abs.replace(/\\/g, "/");
+  const show = (abs) => containedIn(map.root, abs) ? path19.relative(map.root, abs).split(path19.sep).join("/") || "." : abs.replace(/\\/g, "/");
   return {
     host: "codex",
     cwd: map.cwd,
@@ -11206,7 +12365,8 @@ function codexMapJson(map, options = {}) {
     chain: map.chain.slice(0, limit).map((c) => ({ layer: c.layer, path: show(c.abs), bytes: c.bytes, loaded: c.loaded, ...c.tokens !== void 0 ? { tokens: c.tokens } : {}, ...c.shadows ? { shadows: show(c.shadows) } : {} })),
     nested: map.nested.slice(0, limit).map((n) => ({ path: show(n.abs), bytes: n.bytes })),
     onDemand: map.onDemand.slice(0, limit).map((f) => ({ path: show(f.abs), tokens: f.tokens })),
-    ...map.memories ? { memories: { path: show(map.memories.abs), files: map.memories.files, bytes: map.memories.bytes, enabled: map.config.memoriesEnabled, compiled: false } } : {}
+    ...map.memories ? { memories: { path: show(map.memories.abs), files: map.memories.files, bytes: map.memories.bytes, enabled: map.config.memoriesEnabled, compiled: false } } : {},
+    ...map.hooks.registered ? { hooksRan: map.hooks.ran } : {}
   };
 }
 
@@ -11424,7 +12584,7 @@ function exitCodeFor(findings, failOn) {
 }
 
 // src/workspace/preview.ts
-import path17 from "node:path";
+import path20 from "node:path";
 function planUnavailableReason(err) {
   return err.message.split("\n")[0] ?? err.message;
 }
@@ -11474,7 +12634,7 @@ function renderHosts(ws, mcp) {
   const lines = [""];
   const hosts = ws.hosts ?? [];
   const isFolder = ws.shape === "memory-dir" || ws.hosts !== void 0;
-  const show = (p) => p.split(path17.sep).join("/");
+  const show = (p) => p.split(path20.sep).join("/");
   const how = {
     import: "imports from this folder",
     mention: "names this folder by path"
@@ -11493,7 +12653,7 @@ function renderHosts(ws, mcp) {
   if (hosts.length > 0) {
     lines.push(`  loaded with this folder, counted above (${hosts.length} file${hosts.length === 1 ? "" : "s"} outside it):`);
     for (const h of hosts) {
-      const what = h.via ? `loads ${path17.basename(h.via)}, which ${h.link === "import" ? "imports from" : "names"} this folder` : how[h.link];
+      const what = h.via ? `loads ${path20.basename(h.via)}, which ${h.link === "import" ? "imports from" : "names"} this folder` : how[h.link];
       lines.push(`    ${h.rel}  ${what}  (${show(h.abs)})`);
     }
   }
@@ -11517,7 +12677,7 @@ function renderHosts(ws, mcp) {
   const utf16 = [.../* @__PURE__ */ new Set([...ws.files.map((f) => f.abs), ...ws.reported?.files ?? []])].filter(isUtf16);
   list("saved as UTF-16: Claude Code reads it as plain text and does not follow its @ imports, so they never load; save it as UTF-8", utf16);
   lines.push(
-    ws.host === "codex" && pathKey(path17.resolve(ws.root)) === pathKey(path17.resolve(hostConfigDir("codex"))) ? "  covers: your user AGENTS.md, which Codex loads in every session of every project." : ws.host === "codex" ? `  covers: this folder only; the user AGENTS.md under ${hostConfigDir("codex").split(path17.sep).join("/")} loads in every session too (the map counts it): to work on it, run init on that folder.` : isFolder ? "  covers: this folder and the files listed above; Claude Code may also load user rules and parent-folder files that this total leaves out." : "  covers: this folder only; Claude Code may also load your user CLAUDE.md, user rules and parent-folder files that this total leaves out."
+    ws.host === "codex" && pathKey(path20.resolve(ws.root)) === pathKey(path20.resolve(hostConfigDir("codex"))) ? "  covers: your user AGENTS.md, which Codex loads in every session of every project." : ws.host === "codex" ? `  covers: this folder only; the user AGENTS.md under ${hostConfigDir("codex").split(path20.sep).join("/")} loads in every session too (the map counts it): to work on it, run init on that folder.` : isFolder ? "  covers: this folder and the files listed above; Claude Code may also load user rules and parent-folder files that this total leaves out." : "  covers: this folder only; Claude Code may also load your user CLAUDE.md, user rules and parent-folder files that this total leaves out."
   );
   lines.push("");
   return lines.join("\n");
@@ -11543,7 +12703,7 @@ function renderPreviewJson(preview, target, flags) {
 }
 
 // src/surface/version.ts
-var VERSION = "1.4.1";
+var VERSION = "1.4.2";
 
 export {
   SEVERITY_ORDER,
@@ -11552,9 +12712,11 @@ export {
   ZodFirstPartyTypeKind,
   objectType,
   external_exports,
+  estimateTokens,
   formatTokens,
   isProfileName,
   RECALL_MAX_TOKENS,
+  tokenize,
   unitsOf,
   buildSearchIndex,
   rankUnits,
@@ -11569,12 +12731,10 @@ export {
   hostLabel,
   detectHost,
   claudeConfigDir,
-  directCliPath,
   pathKey,
   containedIn,
   isEscapingRelative,
   shellSafe,
-  shellWord,
   runFromNote,
   applyCommand,
   undoCommand,
@@ -11594,6 +12754,9 @@ export {
   codexLoadedFiles,
   PolicyError,
   loadPolicy,
+  onDemandOwner,
+  parseReadHookInput,
+  recordRead,
   RULES,
   FolderError,
   undoNoBackupMessage,
@@ -11633,11 +12796,13 @@ export {
   compiledFolders,
   readDiscovery,
   recordedSet,
+  saveStart,
   recordedMemoryDir,
   resolveConfig,
   doctor,
   RecallDirError,
   recallDir,
+  forgetPlaced,
   fenceCode,
   quoteFenceLines,
   renderHook,
@@ -11649,6 +12814,10 @@ export {
   claudeMapJson,
   memoryFolderMap,
   renderClaudeMap,
+  shellArgs,
+  runUninstall,
+  runInstall,
+  markCodexHookRan,
   buildCodexMap,
   renderCodexMap,
   codexMapJson,

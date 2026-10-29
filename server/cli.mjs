@@ -30,11 +30,12 @@ import {
   currentHost,
   detectHost,
   detectPhase,
-  directCliPath,
   discover,
   discoveryRecordPath,
+  estimateTokens,
   exitCodeFor,
   foreignMemoryFolderNote,
+  forgetPlaced,
   formatTokens,
   hostConfigDir,
   hostLabel,
@@ -49,8 +50,12 @@ import {
   loadOnDemandContent,
   loadPolicy,
   manifestLost,
+  markCodexHookRan,
   memoryFolderMap,
+  onDemandOwner,
   parseHookInput,
+  parseReadHookInput,
+  pathKey,
   planFolder,
   planFolderUndo,
   planLostManifestUndo,
@@ -65,6 +70,8 @@ import {
   recall,
   recallDir,
   recordLoad,
+  recordRead,
+  recordedMemoryDir,
   recordedSet,
   renderClaudeMap,
   renderCodexMap,
@@ -76,16 +83,19 @@ import {
   repoRecordPath,
   repoRecordedSet,
   resolveReported,
+  runInstall,
+  runUninstall,
   saveDiscovery,
+  saveStart,
   selectUnits,
   setHost,
-  shellSafe,
-  shellWord,
+  shellArgs,
+  tokenize,
   undoCommand,
   undoNoBackupMessage,
   undoRefusal,
   unitsOf
-} from "./chunks/chunk-NMSVLGUS.mjs";
+} from "./chunks/chunk-HDB6MPYB.mjs";
 import "./chunks/chunk-ZVIOPPZP.mjs";
 
 // src/surface/cli.ts
@@ -320,494 +330,115 @@ function renderNoWorkload() {
   ].join("\n");
 }
 
-// src/runtime/install.ts
+// src/runtime/preciseRead.ts
 import fs2 from "node:fs";
 import path from "node:path";
-function safeDirectCliPath(cliPath) {
-  const direct = directCliPath(cliPath);
-  return direct && shellSafe(direct) ? direct : void 0;
-}
-function hookCapable(host) {
-  return host === void 0 || host === "codex";
-}
-var HOOK_HOST_FLAG = " --host codex";
-function quoteArg(arg) {
-  return shellWord(arg) ?? `"${arg.replace(/"/g, '\\"')}"`;
-}
-function formatCommand(argv) {
-  return argv.map(quoteArg).join(" ");
-}
-function shellArgs(args) {
-  return args.map(quoteArg);
-}
-function npxCacheNote(plan) {
-  if (!plan.servedDirect || !/\/_npx\//.test(plan.servedDirect)) return void 0;
-  return "note: this copy lives in the npx cache, which `npm cache clean` or a newer version can remove; the registration and the hook would then stop starting. For a durable install: npm i -g minnimemory, then minnimemory install --force";
-}
-function hostConfigPath(host) {
-  if (host === "cursor") return "~/.cursor/mcp.json";
-  if (host === "windsurf") return "~/.codeium/windsurf/mcp_config.json";
-  if (host === "codex") return "~/.codex/config.toml";
-  return void 0;
-}
-function codexConfigDirOf(env) {
-  return env.codexConfigDir ?? path.join(env.home, ".codex");
-}
-function codexRegistered(env) {
+var PRECISE_MIN_TOKENS = 800;
+var PRECISE_KEEP_TOKENS = 1200;
+var TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
+function promptOf(line) {
   try {
-    return /^\s*\[mcp_servers\.minnimemory\]\s*$/m.test(fs2.readFileSync(path.join(codexConfigDirOf(env), "config.toml"), "utf8"));
-  } catch {
-    return false;
-  }
-}
-function planInstall(options, env) {
-  const servedFlags = [];
-  if (options.write) servedFlags.push("--profile", "full", "--allow-write");
-  const codex = options.host === "codex";
-  if (codex) servedFlags.push("--host", "codex");
-  const servedDirect = safeDirectCliPath(options.cliPath);
-  const servedArgv = servedDirect ? ["node", servedDirect, "mcp", ...servedFlags] : ["npx", "-y", "minnimemory", "mcp", ...servedFlags];
-  const codexHome = codex && env.codexHome ? env.codexHome : void 0;
-  const envArgs = codexHome ? ["--env", `CODEX_HOME=${codexHome}`] : [];
-  const addArgv = codex ? ["codex", "mcp", "add", "minnimemory", ...envArgs, "--", ...servedArgv] : ["claude", "mcp", "add", "minnimemory", "-s", options.scope, "--", ...servedArgv];
-  const removeArgv = codex ? ["codex", "mcp", "remove", "minnimemory"] : ["claude", "mcp", "remove", "minnimemory", "-s", options.scope];
-  const getArgv = codex ? ["codex", "mcp", "get", "minnimemory"] : ["claude", "mcp", "get", "minnimemory"];
-  const probeArgv = codex ? ["codex", "--version"] : ["claude", "--version"];
-  const manualLine = formatCommand(addArgv);
-  const tomlSnippet = codex ? [
-    "[mcp_servers.minnimemory]",
-    `command = ${JSON.stringify(servedArgv[0])}`,
-    `args = [${servedArgv.slice(1).map((a) => JSON.stringify(a)).join(", ")}]`,
-    ...codexHome ? [`env = { CODEX_HOME = ${JSON.stringify(codexHome)} }`] : []
-  ].join("\n") : void 0;
-  const jsonSnippet = JSON.stringify(
-    {
-      mcpServers: {
-        minnimemory: {
-          command: "npx",
-          args: ["-y", "minnimemory", "mcp", ...servedFlags]
-        }
-      }
-    },
-    null,
-    2
-  );
-  const plan = {
-    scope: options.scope,
-    servedFlags,
-    servedArgv,
-    ...servedDirect ? { servedDirect } : {},
-    addArgv,
-    removeArgv,
-    getArgv,
-    probeArgv,
-    manualLine,
-    jsonSnippet,
-    ...tomlSnippet ? { tomlSnippet } : {}
-  };
-  if (options.host && options.host !== "json") {
-    const configPath = hostConfigPath(options.host);
-    if (configPath) plan.hostConfigPath = configPath;
-  }
-  return plan;
-}
-function isMissingBinary(outcome) {
-  return outcome.error !== void 0 && outcome.error.code === "ENOENT";
-}
-var DRIFT_HOOK_COMMAND = "npx -y minnimemory drift";
-function driftHookCommand(cliPath, host) {
-  const direct = safeDirectCliPath(cliPath);
-  return (direct ? `node "${direct}" drift` : DRIFT_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
-}
-var MEMORY_HOOK_COMMAND = "npx -y minnimemory hook";
-function memoryHookCommand(cliPath, host) {
-  const direct = safeDirectCliPath(cliPath);
-  return (direct ? `node "${direct}" hook` : MEMORY_HOOK_COMMAND) + (host === "codex" ? HOOK_HOST_FLAG : "");
-}
-function withoutHostFlag(command) {
-  return command.endsWith(HOOK_HOST_FLAG) ? command.slice(0, -HOOK_HOST_FLAG.length) : command;
-}
-function isMemoryHookCommand(command) {
-  if (typeof command !== "string") return false;
-  const c = withoutHostFlag(command);
-  return c === MEMORY_HOOK_COMMAND || isOwnNodeForm(c, "hook");
-}
-function registrationMatches(getOutput, plan) {
-  const norm = (s) => s.replace(/\\/g, "/").toLowerCase();
-  const command = /^\s*Command:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
-  const args = /^\s*Args:\s*(.*)$/m.exec(getOutput)?.[1]?.trim();
-  const out = norm(command ? `${command} ${args ?? ""}
-${getOutput}` : getOutput);
-  return plan.servedDirect ? out.includes(norm(plan.servedDirect)) : out.includes("npx -y minnimemory mcp");
-}
-function registeredScope(getOutput) {
-  const m = /Scope:\s*(User|Project|Local)\b/i.exec(getOutput);
-  return m ? m[1].toLowerCase() : void 0;
-}
-function isOwnNodeForm(command, verb) {
-  const m = /^node "([^"]+)" (drift|loaded|hook)$/.exec(command);
-  if (m === null || m[2] !== verb) return false;
-  const file = m[1];
-  return /minnimemory/i.test(file) || ownPackageAt(file);
-}
-function ownPackageAt(file) {
-  if (!path.isAbsolute(file)) return false;
-  let dir = path.dirname(file);
-  for (let i = 0; i < 4; i++) {
-    try {
-      const pkg = JSON.parse(fs2.readFileSync(path.join(dir, "package.json"), "utf8"));
-      return pkg.name === "minnimemory";
-    } catch {
-      const up = path.dirname(dir);
-      if (up === dir) return false;
-      dir = up;
-    }
-  }
-  return false;
-}
-function isDriftHookCommand(command) {
-  if (typeof command !== "string") return false;
-  const c = withoutHostFlag(command);
-  return c === DRIFT_HOOK_COMMAND || isOwnNodeForm(c, "drift");
-}
-var LOADED_HOOK_COMMAND = "npx -y minnimemory loaded";
-function loadedHookCommand(cliPath) {
-  const direct = safeDirectCliPath(cliPath);
-  return direct ? `node "${direct}" loaded` : LOADED_HOOK_COMMAND;
-}
-function isLoadedHookCommand(command) {
-  return typeof command === "string" && (command === LOADED_HOOK_COMMAND || isOwnNodeForm(command, "loaded"));
-}
-function ownHooks(cliPath, host) {
-  const drift = driftHookCommand(cliPath, host);
-  const memory = memoryHookCommand(cliPath, host);
-  const loaded = loadedHookCommand(cliPath);
-  const prompt = [
-    { event: "UserPromptSubmit", command: drift, fallback: DRIFT_HOOK_COMMAND, isOurs: (c) => c === drift || isDriftHookCommand(c) },
-    { event: "UserPromptSubmit", command: memory, fallback: MEMORY_HOOK_COMMAND, isOurs: (c) => c === memory || isMemoryHookCommand(c) }
-  ];
-  if (host === "codex") return prompt;
-  return [...prompt, { event: "InstructionsLoaded", command: loaded, fallback: LOADED_HOOK_COMMAND, isOurs: (c) => c === loaded || isLoadedHookCommand(c) }];
-}
-function hookSettingsPath(scope, env, host) {
-  const cwd = env.cwd ?? process.cwd();
-  if (host === "codex") return scope === "user" ? path.join(codexConfigDirOf(env), "hooks.json") : path.join(cwd, ".codex", "hooks.json");
-  if (scope === "user") return path.join(env.configDir ?? path.join(env.home, ".claude"), "settings.json");
-  if (scope === "project") return path.join(cwd, ".claude", "settings.json");
-  return path.join(cwd, ".claude", "settings.local.json");
-}
-function restartLine(host) {
-  return host === "codex" ? "Restart Codex." : "Restart Claude Code.";
-}
-var CODEX_TRUST_LINE = "then run /hooks inside Codex once to trust the two minnimemory hooks (Codex skips an untrusted hook)";
-function ourCommandsIn(entries, isOurs) {
-  const found = [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== "object") continue;
-    const inner = entry["hooks"];
-    if (!Array.isArray(inner)) continue;
-    for (const h of inner) {
-      const command = h && typeof h === "object" ? h["command"] : void 0;
-      if (isOurs(command)) found.push(command);
-    }
-  }
-  return found;
-}
-function readSettings(settingsPath) {
-  if (!fs2.existsSync(settingsPath)) return {};
-  try {
-    const parsed = JSON.parse(fs2.readFileSync(settingsPath, "utf8"));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
-    return parsed;
+    const entry = JSON.parse(line);
+    if (entry.type !== "user" || entry.isMeta === true || entry.message?.role !== "user") return void 0;
+    const content = entry.message.content;
+    if (typeof content === "string") return content.trim() || void 0;
+    if (!Array.isArray(content) || content.some((c) => c?.type === "tool_result")) return void 0;
+    const text = content.filter((c) => c?.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n").trim();
+    return text || void 0;
   } catch {
     return void 0;
   }
 }
-function writeSettings(settingsPath, settings) {
-  const text = `${JSON.stringify(settings, null, 2)}
-`;
-  const tmp = `${settingsPath}.minnimemory-${process.pid}.tmp`;
-  fs2.writeFileSync(tmp, text, "utf8");
+function lastPromptFrom(transcriptPath) {
+  if (!transcriptPath) return void 0;
   try {
-    fs2.renameSync(tmp, settingsPath);
-  } catch {
-    fs2.rmSync(tmp, { force: true });
-    fs2.writeFileSync(settingsPath, text, "utf8");
-  }
-}
-function hooksOf(settings) {
-  const h = settings["hooks"];
-  return h && typeof h === "object" && !Array.isArray(h) ? h : void 0;
-}
-function installHook(options, env) {
-  if (options.host === "codex" && options.scope === "local") {
-    return { exitCode: 2, output: "install --hook: Codex has no local scope; use --scope user or --scope project.", path: "" };
-  }
-  const settingsPath = hookSettingsPath(options.scope, env, options.host);
-  const hooks = ownHooks(options.cliPath, options.host);
-  if (options.dryRun) {
-    return {
-      exitCode: 0,
-      output: hooks.map((h) => `would add the ${h.event} hook \`${h.command}\` to ${settingsPath}`).join("\n"),
-      path: settingsPath
-    };
-  }
-  const settings = readSettings(settingsPath);
-  if (!settings) {
-    return { exitCode: 1, output: `install --hook: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
-  }
-  const all = hooksOf(settings) ?? {};
-  const lines = [];
-  let changed = false;
-  for (const h of hooks) {
-    const entries = Array.isArray(all[h.event]) ? [...all[h.event]] : [];
-    const present = ourCommandsIn(entries, h.isOurs);
-    if (present.includes(h.command)) {
-      lines.push(h.event === "UserPromptSubmit" ? `hook: \`${h.fallback.split(" ").pop()}\` already present in ${settingsPath}` : `hook: ${h.event} already present in ${settingsPath}`);
-      continue;
-    }
-    if (present.length > 0) {
-      for (const entry of entries) {
-        const inner = entry && typeof entry === "object" ? entry["hooks"] : void 0;
-        if (!Array.isArray(inner)) continue;
-        for (const hk of inner) {
-          if (hk && typeof hk === "object" && h.isOurs(hk["command"])) {
-            hk["command"] = h.command;
-          }
-        }
+    const size = fs2.statSync(transcriptPath).size;
+    for (const from of size > TRANSCRIPT_TAIL_BYTES ? [size - TRANSCRIPT_TAIL_BYTES, 0] : [0]) {
+      const fd = fs2.openSync(transcriptPath, "r");
+      let text;
+      try {
+        const buf = Buffer.alloc(size - from);
+        fs2.readSync(fd, buf, 0, buf.length, from);
+        text = buf.toString("utf8");
+      } finally {
+        fs2.closeSync(fd);
       }
-      lines.push(`hook: updated \`${present[0]}\` -> \`${h.command}\` in ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
-    } else {
-      const entry = { hooks: [{ type: "command", command: h.command }] };
-      entries.push(entry);
-      lines.push(`hook: added \`${h.command}\` to ${settingsPath} (${h.event}). ${restartLine(options.host)}`);
+      const lines = text.split("\n");
+      for (let i = lines.length - 1; i >= (from > 0 ? 1 : 0); i--) {
+        const prompt = promptOf(lines[i]);
+        if (prompt) return prompt;
+      }
     }
-    all[h.event] = entries;
-    changed = true;
+  } catch {
   }
-  if (changed) {
-    settings["hooks"] = all;
-    fs2.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    writeSettings(settingsPath, settings);
-  }
-  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
+  return void 0;
 }
-function removeHook(options, env) {
-  const settingsPath = hookSettingsPath(options.scope, env, options.host);
-  const hooks = ownHooks(options.cliPath, options.host);
-  if (options.dryRun) {
-    return {
-      exitCode: 0,
-      output: hooks.map((h) => `would remove the ${h.event} hook (\`${h.fallback}\` or its direct node form) from ${settingsPath}`).join("\n"),
-      path: settingsPath
-    };
-  }
-  if (!fs2.existsSync(settingsPath)) {
-    return { exitCode: 0, output: `hook: nothing to remove (${settingsPath} does not exist)`, path: settingsPath };
-  }
-  const settings = readSettings(settingsPath);
-  if (!settings) {
-    return { exitCode: 1, output: `install --remove: ${settingsPath} is not valid JSON; not touched.`, path: settingsPath };
-  }
-  const all = hooksOf(settings);
-  const lines = [];
-  for (const h of hooks) {
-    const entries = all && Array.isArray(all[h.event]) ? all[h.event] : void 0;
-    const removed = entries ? ourCommandsIn(entries, h.isOurs) : [];
-    if (!all || !entries || removed.length === 0) continue;
-    const kept = entries.filter((entry) => {
-      if (!entry || typeof entry !== "object") return true;
-      const inner = entry["hooks"];
-      if (!Array.isArray(inner)) return true;
-      const others = inner.filter((hk) => !(hk && typeof hk === "object" && h.isOurs(hk["command"])));
-      if (others.length === 0) return false;
-      entry["hooks"] = others;
-      return true;
+function memoryFolderTopic(file, cwd) {
+  if (!cwd) return void 0;
+  const dir = recordedMemoryDir(path.resolve(cwd));
+  if (!dir) return void 0;
+  const abs = path.resolve(file);
+  if (pathKey(path.dirname(abs)) !== pathKey(path.resolve(dir))) return void 0;
+  const name = path.basename(abs);
+  if (!/\.md$/i.test(name) || /^MEMORY\.md$/i.test(name)) return void 0;
+  return { root: path.resolve(dir), rel: name };
+}
+function asReadResult(value) {
+  if (!value || typeof value !== "object") return void 0;
+  const r = value;
+  const file = r["file"];
+  if (r["type"] !== "text" || !file || typeof file["content"] !== "string" || typeof file["filePath"] !== "string") return void 0;
+  return value;
+}
+function preciseReadOutput(input) {
+  try {
+    if (input.toolName !== "Read" || !input.filePath || !input.sessionId) return "";
+    if (input.offset !== void 0 || input.limit !== void 0) return "";
+    const result = asReadResult(input.response);
+    if (!result || result.file.startLine > 1) return "";
+    const owner = onDemandOwner(input.filePath) ?? memoryFolderTopic(input.filePath, input.cwd);
+    if (!owner) return "";
+    const fileText = fs2.readFileSync(path.join(owner.root, owner.rel), "utf8");
+    if (estimateTokens(fileText) < PRECISE_MIN_TOKENS) return "";
+    const prompt = lastPromptFrom(input.transcriptPath);
+    if (!prompt) return "";
+    const distinct = new Set(tokenize(prompt)).size;
+    const needed = Math.min(distinct, Math.max(2, Math.ceil(distinct / 2)));
+    const units = unitsOf({ name: path.basename(owner.rel).replace(/\.md$/i, ""), file: owner.rel }, fileText);
+    const all = rankUnits(buildSearchIndex(units), prompt, units.length).map((r) => ({ ...r.unit, score: r.score, matched: r.matched }));
+    const unitTerms = units.map((u) => new Set(tokenize(u.content)));
+    const distinctive = [...new Set(tokenize(prompt))].filter((t) => {
+      const n = unitTerms.filter((s) => s.has(t)).length;
+      return n > 0 && n <= Math.floor(units.length / 2);
     });
-    if (kept.length === 0) delete all[h.event];
-    else all[h.event] = kept;
-    lines.push(`hook: removed \`${removed[0]}\` from ${settingsPath}`);
-  }
-  if (lines.length === 0) return { exitCode: 0, output: `hook: nothing to remove in ${settingsPath}`, path: settingsPath };
-  if (all && Object.keys(all).length === 0) delete settings["hooks"];
-  writeSettings(settingsPath, settings);
-  return { exitCode: 0, output: lines.join("\n"), path: settingsPath };
-}
-function runUninstall(options, env, runner) {
-  const plan = planInstall(options, env);
-  const lines = [];
-  if (options.dryRun) {
-    lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
-    const hookPreview = removeHook({ ...options, dryRun: true }, env);
-    lines.push(hookPreview.output);
-    return { exitCode: 0, output: `${lines.join("\n")}
-` };
-  }
-  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
-  let exitCode = 0;
-  if (isMissingBinary(probe)) {
-    lines.push(`the ${options.host === "codex" ? "codex" : "claude"} CLI is not on PATH; skipping the MCP registration removal.`);
-  } else {
-    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
-    lines.push(`ran: ${formatCommand(plan.removeArgv)}`);
-    if (removed.code !== 0 && /no mcp server named/i.test(`${removed.stdout}
-${removed.stderr}`)) {
-      lines.push(`nothing registered as minnimemory in ${options.scope} scope`);
-    } else if (removed.code !== 0) {
-      lines.push(removed.stderr.trim());
-      exitCode = 1;
-    } else if (removed.stdout.trim()) {
-      lines.push(removed.stdout.trim());
+    if (distinctive.length === 0) return "";
+    const kept = [];
+    let used = 0;
+    for (const m of all) {
+      const terms = new Set(tokenize(m.content));
+      if (m.matched < needed || !distinctive.some((t) => terms.has(t))) continue;
+      if (kept.some((k) => m.startLine <= k.endLine && m.endLine >= k.startLine)) continue;
+      if (used + m.tokens > PRECISE_KEEP_TOKENS && kept.length > 0) break;
+      kept.push(m);
+      used += m.tokens;
     }
+    if (kept.length === 0) return "";
+    kept.sort((a, b) => a.startLine - b.startLine);
+    const lines = fileText.split(/\r?\n/);
+    const shown = kept.map((m) => `--- lines ${m.startLine}-${m.endLine} of ${lines.length} ---
+${lines.slice(m.startLine - 1, m.endLine).join("\n")}`);
+    const left = units.filter((u) => u.kind === "section" && u.path.length <= 2 && !kept.some((k) => u.startLine <= k.endLine && u.endLine >= k.startLine));
+    const leftLines = [...new Map(left.map((m) => [`${m.startLine}-${m.endLine}`, `${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine})`])).values()];
+    const note = `minnimemory: this Read shows the ${kept.length} section(s) of ${owner.rel} that match the current prompt.` + (leftLines.length ? ` Not shown: ${leftLines.join("; ")}. Read with offset and limit to see one.` : ` Read with offset and limit to see the rest.`);
+    const content = `${note}
+
+${shown.join("\n\n")}
+`;
+    const out = { ...result, file: { ...result.file, content, numLines: content.split("\n").length, startLine: 1 } };
+    return JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", updatedToolOutput: out } });
+  } catch {
+    return "";
   }
-  const hookResult = removeHook(options, env);
-  lines.push(hookResult.output);
-  if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
-  return { exitCode, output: `${lines.join("\n")}
-` };
-}
-function nextStep(cliPath, host) {
-  const direct = safeDirectCliPath(cliPath);
-  const init = direct ? `node "${direct}" init` : "npx -y minnimemory init";
-  if (host === "codex") {
-    return `next: restart Codex, ${CODEX_TRUST_LINE}, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --host codex\` from your project (Codex's load set needs no --from-log).`;
-  }
-  return `next: restart Claude Code, then ask it to clean up your memory with minnimemory; it starts with init. In a terminal: \`${init} <folder> --from-log\` from your project.`;
-}
-function withHook(options, env, lines, exitCode) {
-  if (options.hook) {
-    const hookResult = installHook(options, env);
-    lines.push(hookResult.output);
-    if (hookResult.exitCode !== 0) exitCode = hookResult.exitCode;
-  }
-  if (exitCode === 0) lines.push(nextStep(options.cliPath, options.host));
-  return { exitCode, output: `${lines.join("\n")}
-` };
-}
-function runCodexInstall(options, env, runner, plan) {
-  const lines = [];
-  if (options.dryRun) {
-    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
-    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
-    const note2 = npxCacheNote(plan);
-    if (note2) lines.push(note2);
-    return withHook(options, env, lines, 0);
-  }
-  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
-  if (isMissingBinary(probe)) {
-    lines.push(
-      "the codex CLI is not on PATH. Register minnimemory manually:",
-      "",
-      `  ${plan.manualLine}`,
-      "",
-      `or add this to ${plan.hostConfigPath ?? "~/.codex/config.toml"}:`,
-      "",
-      plan.tomlSnippet ?? ""
-    );
-    return { exitCode: 2, output: `${lines.join("\n")}
-` };
-  }
-  const registered = codexRegistered(env);
-  if (registered && !options.force) {
-    lines.push(
-      "minnimemory is already registered with Codex.",
-      `to change it: ${formatCommand(["npx", "-y", "minnimemory", "install", "--host", "codex", "--force", ...options.write ? ["--write"] : []])}`
-    );
-    return withHook(options, env, lines, 0);
-  }
-  if (registered) {
-    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
-    if (removed.code !== 0) {
-      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
-      return { exitCode: 1, output: `${lines.join("\n")}
-` };
-    }
-  }
-  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
-  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
-  if (added.code !== 0) {
-    lines.push(added.stderr.trim());
-    return { exitCode: 1, output: `${lines.join("\n")}
-` };
-  }
-  if (added.stdout.trim()) lines.push(added.stdout.trim());
-  const note = npxCacheNote(plan);
-  if (note) lines.push(note);
-  return withHook(options, env, lines, 0);
-}
-function runInstall(options, env, runner) {
-  const plan = planInstall(options, env);
-  const lines = [];
-  if (options.hook && !hookCapable(options.host)) {
-    return { exitCode: 2, output: "--hook only applies to Claude Code and Codex\n" };
-  }
-  if (options.host === "codex") return runCodexInstall(options, env, runner, plan);
-  if (options.host) {
-    lines.push(plan.jsonSnippet);
-    if (plan.hostConfigPath) {
-      lines.push("", `config file: ${plan.hostConfigPath}`);
-    } else {
-      lines.push("", `add this under "mcpServers" in your host's MCP config file.`);
-    }
-    return { exitCode: 0, output: `${lines.join("\n")}
-` };
-  }
-  if (options.dryRun) {
-    if (options.force) lines.push(`would run: ${formatCommand(plan.removeArgv)}`);
-    lines.push(`would run: ${formatCommand(plan.addArgv)}`);
-    const note2 = npxCacheNote(plan);
-    if (note2) lines.push(note2);
-    return withHook(options, env, lines, 0);
-  }
-  const probe = runner(plan.probeArgv[0], plan.probeArgv.slice(1));
-  if (isMissingBinary(probe)) {
-    lines.push(
-      "the claude CLI is not on PATH. Register minnimemory manually:",
-      "",
-      `  ${plan.manualLine}`,
-      "",
-      "or add this to another host's MCP config:",
-      "",
-      plan.jsonSnippet
-    );
-    return { exitCode: 2, output: `${lines.join("\n")}
-` };
-  }
-  const existing = runner(plan.getArgv[0], plan.getArgv.slice(1));
-  const foundScope = existing.code === 0 ? registeredScope(existing.stdout) : void 0;
-  const otherScope = foundScope !== void 0 && foundScope !== options.scope;
-  if (otherScope) {
-    lines.push(`minnimemory is also registered at ${foundScope} scope; that registration is left as it is (Claude Code uses local, then project, then user).`);
-  }
-  const alreadyRegistered = existing.code === 0 && !otherScope;
-  const stale = alreadyRegistered && !registrationMatches(existing.stdout, plan);
-  if (alreadyRegistered && !options.force && !stale) {
-    lines.push(
-      "minnimemory is already registered.",
-      `to change it: ${formatCommand(["npx", "-y", "minnimemory", "install", "--force", "--scope", options.scope, ...options.write ? ["--write"] : []])}`
-    );
-    return withHook(options, env, lines, 0);
-  }
-  if (alreadyRegistered) {
-    if (stale && !options.force) lines.push("minnimemory is registered with a different command; repointing it at this copy.");
-    const removed = runner(plan.removeArgv[0], plan.removeArgv.slice(1));
-    if (removed.code !== 0) {
-      lines.push(`ran: ${formatCommand(plan.removeArgv)}`, removed.stderr.trim());
-      return { exitCode: 1, output: `${lines.join("\n")}
-` };
-    }
-  }
-  const added = runner(plan.addArgv[0], plan.addArgv.slice(1));
-  lines.push(`ran: ${formatCommand(plan.addArgv)}`);
-  if (added.code !== 0) {
-    lines.push(added.stderr.trim());
-    return { exitCode: 1, output: `${lines.join("\n")}
-` };
-  }
-  if (added.stdout.trim()) lines.push(added.stdout.trim());
-  const note = npxCacheNote(plan);
-  if (note) lines.push(note);
-  return withHook(options, env, lines, 0);
 }
 
 // src/surface/cli.ts
@@ -818,8 +449,9 @@ minnimemory ${VERSION}  the agent memory compiler
 usage: the four lifecycle verbs, the CLI and the MCP basic profile share.
 The only difference is who writes: the CLI writes to disk itself, the MCP tools return the
 command that does (and the operations it performs) for the agent to run.
-  minnimemory init <folder>     always first: takes where Claude Code loads from (--loaded,
-                                 --from-log, --memory-dir; the agent passes them over MCP),
+  minnimemory init <folder>     always first: takes where the host loads from (Claude Code:
+                                 --loaded, --from-log, --memory-dir, or the agent over MCP;
+                                 Codex: its own load rules, the agent's report over MCP),
                                  checks and saves them, then the map, the audit and the diff
                                  apply would write; writes only that record; ends with the
                                  apply command to run. --map prints only the map
@@ -836,22 +468,28 @@ more
   minnimemory mcp [path]        start the MCP server. Serves init/doctor/apply/undo by
                                  default; --profile full serves the seven maintainer tools
   minnimemory install            register minnimemory with the current host
-  minnimemory uninstall          remove the registration and the three hooks install added (same
-                                 as install --remove); lists folders still compiled, to undo first
+  minnimemory uninstall          remove the registration and the hooks install added (four on
+                                 Claude Code, two on Codex; same as install --remove); lists
+                                 folders still compiled, to undo first
   minnimemory bench <folder>    what the compiled shape costs over a session
   minnimemory recall <path> <query...>
                                  recall against a compiled workspace or a manifest-less memory
                                  directory (Layout B), whichever <path> is, change nothing
-  minnimemory hook               Claude Code UserPromptSubmit hook: reads hook JSON from stdin,
+  minnimemory hook               UserPromptSubmit hook (Claude Code, Codex): reads hook JSON from stdin,
                                  prints a fenced memory block to stdout, or nothing on no hit.
                                  Experimental: measured offline only, not yet in a
                                  live session
-  minnimemory drift              Claude Code UserPromptSubmit hook: prints a one-line notice when
+  minnimemory drift              UserPromptSubmit hook (Claude Code, Codex): prints a one-line notice when
                                  memory files changed since the last apply, once per change,
                                  nothing otherwise
-  minnimemory loaded             Claude Code InstructionsLoaded hook: records which memory files
+  minnimemory loaded             Claude Code only, InstructionsLoaded hook: records which memory files
                                  Claude Code loaded, for the map init prints; reads hook JSON
                                  from stdin, prints nothing
+  minnimemory read               Claude Code only, PostToolUse hook on Read: logs which
+                                 OnDemandMemory files sessions open, for doctor's MM024; prints
+                                 nothing. --precise (install --precise-reads, off by default):
+                                 a whole-file Read of a large OnDemandMemory file returns only
+                                 the sections the prompt needs
 
 install options
   --scope <name>          user, project or local, same meaning as claude mcp add   (default user)
@@ -859,7 +497,10 @@ install options
                            --allow-write); the default basic profile never writes
   --dry-run               print the command without running it, exit 0
   --force                 remove an existing registration first, then re-add
-  --no-hook               skip the three hooks (memory, drift notice, load log); on by default
+  --no-hook               skip the hooks (memory, drift notice, and on Claude Code the load
+                           log and the Read usage log); on by default
+  --precise-reads         the Read hook also trims a whole-file Read of a large OnDemandMemory
+                           file to the sections the prompt needs; off by default (unproven live)
   --remove                remove the MCP registration and the hooks install added (= uninstall)
   --host <name>           codex: register with Codex (codex mcp add) and write the two
                            UserPromptSubmit hooks to ~/.codex/hooks.json (--scope user) or
@@ -914,6 +555,7 @@ init and doctor options
                             auto     same as none today, for every source
                             none     structure only, embed nothing
                             routing  the rules that make routing work, about 210 tokens
+                            output   the answer-length rules alone, about 230 tokens
                             full     the complete set, about 710 tokens
   --allow-secrets         preview as if a credential-shaped source were allowed through
   --episodic-json         plan episodic OnDemandMemory files (changelogs, logs) as JSON, not
@@ -942,6 +584,7 @@ apply options
                             auto     same as none today, for every source
                             none     structure only, embed nothing
                             routing  the rules that make routing work, about 210 tokens
+                            output   the answer-length rules alone, about 230 tokens
                             full     the complete set, about 710 tokens
   --allow-secrets         compile even when the source holds a credential-shaped string
   --episodic-json         write episodic OnDemandMemory files (changelogs, logs) as JSON, not
@@ -1109,7 +752,7 @@ function runMcpCommand(target, values) {
   void (async () => {
     const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
       import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-F62QRSMU.mjs")
+      import("./chunks/mcpServer-NLSYI5ID.mjs")
     ]);
     const server = createMcpServer(root, {
       profile: profileName,
@@ -1132,8 +775,9 @@ function uninstallNotes() {
     lines.push("still compiled (they keep working without minnimemory; to put the originals back, undo each one):");
     for (const d of folders) lines.push(`  ${undoCommand(d)}`);
   }
-  lines.push(`kept: ${path2.dirname(discoveryRecordPath())} (init records, the load log, undo backups); delete it yourself once you have checked undo-backups/.`);
-  lines.push("restart Claude Code.");
+  const codex = currentHost() === "codex";
+  lines.push(`kept: ${path2.dirname(discoveryRecordPath())} (init records, ${codex ? "" : "the load log, the usage log, "}undo backups); delete it yourself once you have checked undo-backups/.`);
+  lines.push(`restart ${hostLabel()}.`);
   return lines.join("\n");
 }
 var FOLDER_COMMANDS = /* @__PURE__ */ new Set(["init", "doctor", "apply", "undo", "bench"]);
@@ -1212,6 +856,8 @@ function main(argv) {
         "auto-memory": { type: "boolean", default: false },
         hook: { type: "boolean", default: false },
         "no-hook": { type: "boolean", default: false },
+        "precise-reads": { type: "boolean", default: false },
+        precise: { type: "boolean", default: false },
         remove: { type: "boolean", default: false },
         host: { type: "string" },
         "host-file": { type: "string", multiple: true },
@@ -1353,13 +999,16 @@ ${USAGE}`);
   };
   let userTargetNote;
   let mapFolder;
-  if (command === "init") {
+  if (["init", "doctor", "apply", "undo"].includes(command)) {
     const userTarget = codexUserTarget(target, { reported: freshReport });
     if (userTarget) {
       userTargetNote = codexUserTargetNote(target, userTarget);
       mapFolder = path2.resolve(target);
       target = userTarget.dir;
       named = userTarget.dir;
+      if (command !== "init" && values.json !== true) process.stdout.write(`
+  ${userTargetNote}
+`);
     }
   }
   if (command === "install" || command === "uninstall") {
@@ -1375,6 +1024,7 @@ ${USAGE}`);
         // Claude Code (no --host) and Codex have hooks the tool knows; the JSON-only hosts
         // (cursor, windsurf, json) get no hook, so the default avoids runInstall's refusal there.
         hook: (values.host === void 0 || values.host === "codex") && values["no-hook"] !== true,
+        preciseReads: values["precise-reads"] === true,
         // The hook calls this very CLI by path (driftHookCommand); under npx that is the cached
         // package, under a checkout it is dist/surface/cli.js.
         cliPath: process.argv[1] ? realOrResolved(process.argv[1]) : void 0
@@ -1388,6 +1038,7 @@ ${USAGE}`);
     }
     const env = { home: os.homedir(), platform: process.platform, cwd: process.cwd(), configDir: claudeConfigDir(), codexConfigDir: hostConfigDir("codex"), ...process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {} };
     const removing = command === "uninstall" || values.remove === true;
+    if (removing && options.host === "codex") setHost("codex");
     const result = removing ? runUninstall(options, env, processRunner()) : runInstall(options, env, processRunner());
     const stream = result.exitCode === 0 ? process.stdout : process.stderr;
     stream.write(`
@@ -1409,7 +1060,7 @@ ${result.output}
     const profileName = values.profile ?? "auto";
     if (profileName !== "auto" && !isProfileName(profileName)) {
       process.stderr.write(`
-  error: --profile must be one of auto, none, routing, full (got "${profileName}")
+  error: --profile must be one of auto, none, routing, output, full (got "${profileName}")
 
 `);
       return 2;
@@ -1467,6 +1118,7 @@ ${result.output}
         const folder = preview.workspace.folderRoot ?? path2.resolve(target);
         const asMemory = preview.workspace.claudeMemoryFolder ? folder : void 0;
         const where = saveDiscovery(process.cwd(), freshReport ? { ...freshReport, ...freshReport.memoryDir ?? asMemory ? { memoryDir: freshReport.memoryDir ?? asMemory } : {} } : void 0, folder);
+        if (!freshReport && codexMap) saveStart(process.cwd(), codexMap.chain.map((c) => c.abs));
         if (freshReport && !values.json) process.stdout.write(where ? `  saved what ${hostLabel()} loads here for apply, doctor and undo: ${where}
 
 ` : "  could not save the locations; pass them again to apply\n\n");
@@ -1613,7 +1265,7 @@ ${result.output}
     void (async () => {
       const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
         import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-F62QRSMU.mjs")
+        import("./chunks/mcpServer-NLSYI5ID.mjs")
       ]);
       process.stderr.write(`
   mcp: ${DISABLED_MESSAGE}
@@ -1697,6 +1349,12 @@ ${result.output}
     }
     try {
       const input = parseHookInput(raw);
+      if (currentHost() === "codex") {
+        try {
+          markCodexHookRan(hostConfigDir("codex"), input.cwd ?? process.cwd());
+        } catch {
+        }
+      }
       const text = renderHook(input, { headings: values.headings === true, maxTokens, dir: values.dir });
       if (text) process.stdout.write(`${text}
 `);
@@ -1715,8 +1373,26 @@ ${result.output}
       raw = "";
     }
     try {
-      recordLoad(JSON.parse(raw));
+      const event = JSON.parse(raw);
+      recordLoad(event);
+      if (event.load_reason === "compact" && typeof event.session_id === "string") forgetPlaced(event.session_id);
     } catch {
+    }
+    return 0;
+  }
+  if (command === "read") {
+    let raw = "";
+    try {
+      raw = fs3.readFileSync(0, "utf8");
+    } catch {
+      raw = "";
+    }
+    const input = parseReadHookInput(raw);
+    recordRead(input);
+    if (values.precise === true) {
+      const out = preciseReadOutput(input);
+      if (out) process.stdout.write(`${out}
+`);
     }
     return 0;
   }
