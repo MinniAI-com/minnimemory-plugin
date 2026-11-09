@@ -1,11 +1,13 @@
 # MinniMemoryMCP for Claude Code
 
-MinniMemoryMCP 1.4.2 as a Claude Code plugin. It audits the memory files Claude Code loads
+[![M8ven Score](https://m8ven.ai/badge/mcp/minniai-com-minnimemory-plugin-qb88nf?v=6162f7730cc6cbdbbeac81fcb8d5cd94)](https://m8ven.ai/mcp/minniai-com-minnimemory-plugin-qb88nf?s=readme)
+
+MinniMemoryMCP 1.5.0 as a Claude Code plugin. It audits the memory files Claude Code loads
 (`CLAUDE.md`, `AGENTS.md`, your memory folder) and compiles them into a small AlwaysOnMemory
 body that loads every turn, plus OnDemandMemory files that load only when a task needs them.
 Every change is lossless and undoable: the originals are backed up first and `undo` puts them
 back byte for byte. Everything runs on your machine, on your own files, only when you ask.
-Built by [MinniAI](https://minniai.com).
+Built by [Minni AI](https://minniai.com). Docs: https://minniai.com/minnimemorymcp/docs. AI agents: start at https://minniai.com/agents.md. Demo video: https://www.youtube.com/watch?v=8T3DyjLUfKk.
 
 ## Requirements
 

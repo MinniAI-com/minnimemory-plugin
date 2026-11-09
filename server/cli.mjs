@@ -1,450 +1,22 @@
 #!/usr/bin/env node
 /* MinniMemoryMCP (c) 2026 MinniAI. Licensed under the MinniMemoryMCP License, see LICENSE. */
 import { createRequire as __minniCreateRequire } from "node:module"; const require = __minniCreateRequire(import.meta.url);
-import {
-  BenchError,
-  COMPILED_DIR_NAME,
-  DiscoveryError,
-  FolderError,
-  MAX_BUDGET,
-  McpTargetError,
-  PolicyError,
-  RULES,
-  RecallDirError,
-  VERSION,
-  allRouted,
-  applyFolderPlan,
-  applyFolderUndo,
-  backupBeforeForcedUndo,
-  bounds,
-  buildClaudeMap,
-  buildCodexMap,
-  buildPreview,
-  buildSearchIndex,
-  claudeConfigDir,
-  claudeMapJson,
-  codexMapJson,
-  codexUserTarget,
-  codexUserTargetNote,
-  compiledFolders,
-  currentHost,
-  detectHost,
-  detectPhase,
-  discover,
-  discoveryRecordPath,
-  estimateTokens,
-  exitCodeFor,
-  foreignMemoryFolderNote,
-  forgetPlaced,
-  formatTokens,
-  hostConfigDir,
-  hostLabel,
-  inCodexMemories,
-  initCommand,
-  isHostName,
-  isProfileName,
-  keptBackupsNote,
-  keptOnlyMessage,
-  leaveReason,
-  loadManifest,
-  loadOnDemandContent,
-  loadPolicy,
-  manifestLost,
-  markCodexHookRan,
-  memoryFolderMap,
-  onDemandOwner,
-  parseHookInput,
-  parseReadHookInput,
-  pathKey,
-  planFolder,
-  planFolderUndo,
-  planLostManifestUndo,
-  planOldManifestUndo,
-  rankOnDemandFiles,
-  rankUnits,
-  readDiscovery,
-  readFolderManifest,
-  readLoadLog,
-  readOldManifestVersion,
-  readRepoRecord,
-  recall,
-  recallDir,
-  recordLoad,
-  recordRead,
-  recordedMemoryDir,
-  recordedSet,
-  renderClaudeMap,
-  renderCodexMap,
-  renderDriftNotice,
-  renderFolderPlan,
-  renderHook,
-  renderPreviewJson,
-  renderPreviewText,
-  repoRecordPath,
-  repoRecordedSet,
-  resolveReported,
-  runInstall,
-  runUninstall,
-  saveDiscovery,
-  saveStart,
-  selectUnits,
-  setHost,
-  shellArgs,
-  tokenize,
-  undoCommand,
-  undoNoBackupMessage,
-  undoRefusal,
-  unitsOf
-} from "./chunks/chunk-HDB6MPYB.mjs";
-import "./chunks/chunk-ZVIOPPZP.mjs";
+import{$ as Ke,$a as V,Aa as ft,Ba as mt,Ca as ce,Da as ht,Ea as yt,F as _e,G as Fe,H as U,I as de,J as Ie,Ja as gt,L as Ae,La as pe,M as I,Ma as q,N as le,Na as fe,O as Be,Oa as Y,P as ue,Pa as K,Q as Ue,Qa as wt,T as He,Ta as kt,U as Je,Ua as me,V as Ge,Va as he,W as We,Wa as bt,X as ze,Xa as vt,Y as Xe,Ya as $t,Z as qe,Za as xt,_ as Ye,_a as Ct,aa as Ve,ab as St,b as F,ba as Qe,bb as Mt,ca as Ze,cb as Tt,da as et,fa as N,fb as Ot,g as Oe,gb as Et,h as c,ha as tt,hb as Rt,i as Ee,ia as ot,ja as rt,k as A,ka as nt,kb as Dt,l as G,la as st,lb as Pt,m as W,ma as it,mb as jt,n as z,na as X,nb as ye,o as Re,oa as at,p as De,pa as dt,q as re,qb as Nt,r as ne,ra as lt,s as se,sb as ge,t as B,tb as we,u as Pe,ub as ke,v as je,vb as be,w as ie,x as Ne,xa as ut,y as Le,ya as ct,z as ae,za as pt}from"./chunks/chunk-6D66BJSA.mjs";import"./chunks/chunk-EDORHNJU.mjs";import{spawnSync as no}from"node:child_process";import b from"node:fs";import Ut from"node:os";import k from"node:path";import{fileURLToPath as so}from"node:url";import{parseArgs as io}from"node:util";import Xt from"node:fs";function qt(t){return t.split(/\r?\n/).map(n=>n.trim()).filter(n=>n!==""&&!n.startsWith("#"))}function Lt(t){let n;try{n=Xt.readFileSync(t,"utf8")}catch{throw new I(`cannot read workload file: ${t}`)}let e=qt(n);if(e.length===0)throw new I(`workload file has no tasks: ${t}
+  one task description per line, # for comments`);return e}function Q(t){return`${t.onDemandFile}:${t.startLine}`}function Yt(t){return`${t.onDemandFile} > ${t.heading}`}function Kt(t,n){let e=F(t).flatMap(d=>G({name:d.name,file:d.file},Ie(n,d.file)));return W(e,new Map(F(t).map(d=>[d.name,d.triggers])))}function _t(t,n,e={}){let d=e.root?Kt(t,e.root):void 0,s=d?"section":"file",w=new Set,u=new Map,l=new Map,E=new Map;for(let o of F(t))u.set(o.name,o.tokens),l.set(o.name,o.name),E.set(o.name,o.name);if(d)for(let o of d.units)u.set(Q(o),o.tokens),l.set(Q(o),Yt(o)),E.set(Q(o),o.onDemandFile);let $=[],C=0;n.forEach((o,i)=>{let a=d?Re(z(d,o)).map(p=>Q(p.unit)):De(t,o).filter(p=>p.score>0).map(p=>p.name);a.length===0&&C++;let f=a.filter(p=>!w.has(p));for(let p of f)w.add(p);let y=[...w].reduce((p,g)=>p+(u.get(g)??0),0);$.push({turn:i+1,task:o,opened:f.map(p=>l.get(p)??p),carried:[...w].map(p=>l.get(p)??p),compiledTokens:t.prefix.after+y,baselineTokens:t.prefix.before})});let S=$.reduce((o,i)=>o+i.compiledTokens,0),m=$.reduce((o,i)=>o+i.baselineTokens,0),M=new Set([...w].map(o=>E.get(o)??o)),L=F(t).map(o=>o.name).filter(o=>M.has(o)),R=[...w].reduce((o,i)=>o+(u.get(i)??0),0),T=t.prefix.after+R,j=t.prefix.before-T,O=m-S,r;return O>=0?(r=$.findIndex((o,i)=>$.slice(0,i+1).reduce((f,y)=>f+y.baselineTokens-y.compiledTokens,0)>=0),r=r>=0?r+1:void 0):j>0&&(r=$.length+Math.ceil(-O/j)),{unit:s,turns:$,baselineTotal:m,compiledTotal:S,saving:O,savingPct:m===0?0:O/m*100,onDemandOpened:L,onDemandNeverOpened:F(t).map(o=>o.name).filter(o=>!M.has(o)),unroutedTurns:C,steadyStatePerTurn:T,steadyStateGainPerTurn:j,breakEvenTurn:r}}function Vt(t,n){return n===0?"0.0%":`${(t/n*100).toFixed(1)}%`}function ve(t){return t>=0?`saves ${c(t)}`:`costs ${c(-t)} more`}function $e(t,n){let e=[""];return e.push(`  exact, over ${c(t.turns)} turns. No workload, no assumptions.`),e.push(""),e.push(`    original memory file      ${c(t.baselinePerTurn).padStart(8)} tokens per turn`),e.push(`    compiled always-loaded    ${c(t.compiledPerTurn).padStart(8)} tokens per turn`),e.push(`    OnDemandMemory, all of it   ${c(t.totalOnDemandTokens).padStart(8)} tokens, on demand`),e.push(""),e.push("    best case, no OnDemandMemory file ever opened"),e.push(`      ${c(t.baselineTotal)} -> ${c(t.bestCaseTotal)} tokens, ${ve(t.bestCaseSaving)} (${Vt(t.bestCaseSaving,t.baselineTotal)})`),e.push(""),e.push("    worst case, every OnDemandMemory file opened on turn 1 and carried"),e.push(`      ${c(t.baselineTotal)} -> ${c(t.worstCaseTotal)} tokens, ${ve(t.worstCaseSaving)}`),e.push(""),e.push(`    break-even: ${c(t.breakEvenCarriedTokens)} tokens of OnDemandMemory can sit in`),e.push("    context from turn 1 to the end and come out even. Past that the compiled"),e.push("    shape costs more than the file it replaced."),e.push(""),e.push(`  tokenizer: ${n}, an offline estimate`),e.push(""),e.join(`
+`)}function Ft(t,n){let e=[""],d=t.turns.length;if(e.push(`  MODEL, not a measurement. ${c(d)} turns from the workload you supplied.`),e.push(t.unit==="section"?"  routed at section level, as recall() does: a hit carries the section, not the file.":"  routed at file level, as an agent reading a whole file the OnDemandMemory list named would."),e.push(""),e.push(`    memory tokens over the session   ${c(t.baselineTotal)} -> ${c(t.compiledTotal)}`),e.push(`    ${ve(t.saving)}${t.saving>=0?` (${t.savingPct.toFixed(1)}%)`:""}`),e.push(""),t.onDemandOpened.length>0){e.push(`    opened and carried (${t.onDemandOpened.length}):`);for(let s of t.onDemandOpened)e.push(`      ${s}`);e.push("")}if(t.onDemandNeverOpened.length>0){e.push(`    never opened (${t.onDemandNeverOpened.length}) - this is where the saving comes from:`);for(let s of t.onDemandNeverOpened)e.push(`      ${s}`);e.push("")}return e.push("    one more turn, once everything this workload opens is in context:"),e.push(`      ${c(t.steadyStatePerTurn)} vs ${c(t.turns[0]?.baselineTokens??0)} baseline, ${t.steadyStateGainPerTurn>=0?`saves ${c(t.steadyStateGainPerTurn)}`:`costs ${c(-t.steadyStateGainPerTurn)} more`} per turn`),e.push(""),t.saving<0&&t.steadyStateGainPerTurn<=0?(e.push("    this workload never breaks even. The OnDemandMemory files it opens are large enough that"),e.push("    carrying them costs more every turn than the original file did, so a longer"),e.push("    session loses more, not less. Splitting differently, or not compiling this"),e.push("    file at all, is the honest answer here."),e.push("")):t.saving<0&&t.breakEvenTurn!==void 0?(e.push(`    behind by ${c(-t.saving)} at turn ${c(t.turns.length)}, recovering ${c(t.steadyStateGainPerTurn)} per turn:`),e.push(`    breaks even around turn ${c(t.breakEvenTurn)} if nothing further opens.`),e.push("")):t.saving>=0&&t.breakEvenTurn!==void 0&&(e.push(`    ahead from turn ${c(t.breakEvenTurn)} onward.`),e.push("")),t.unroutedTurns>0&&(e.push(`    ${c(t.unroutedTurns)} of ${c(d)} turns matched no OnDemandMemory file at all.`),e.push("    Those turns are cheap here, but a real agent may have needed something and"),e.push("    not been routed to it. Check them before trusting the total."),e.push("")),e.push("  what this number is conditional on:"),e.push("    - your workload being what a real session looks like. It is your file;"),e.push("      the tool cannot tell whether it is representative."),t.unit==="section"?(e.push("    - every section recall() returns being carried for the rest of the session,"),e.push("      up to its token cap per turn. A real agent may widen with outline() or"),e.push("      read the whole file anyway.")):(e.push("    - every OnDemandMemory file whose triggers match being opened in full. A real"),e.push("      agent may read one and stop, or ignore one the list offered.")),e.push("    - memory tokens only. Reasoning, tool results and conversation are excluded"),e.push("      from both sides, so this ratio is not a session bill."),e.push(""),e.push("  For observed usage against a live agent, measure a real multi-turn session with"),e.push("  and without the compile. That is the only path allowed to call a number measured."),e.push(""),e.push(`  tokenizer: ${n}, an offline estimate`),e.push(""),e.join(`
+`)}function It(){return["","  No workload given, so only the exact bounds above are available.","","  A session number needs a workload: a file with one task description per line,","  describing what you actually do in this repo.","","    minnimemory bench --workload tasks.txt","","  minnimemory ships no default task list on purpose. A number produced from tasks","  the tool invented for itself would say more about the tool than about your repo.",""].join(`
+`)}import H from"node:fs";import P from"node:path";var Qt=800,Zt=1200,At=1024*1024;function eo(t){try{let n=JSON.parse(t);if(n.type!=="user"||n.isMeta===!0||n.message?.role!=="user")return;let e=n.message.content;return typeof e=="string"?e.trim()||void 0:!Array.isArray(e)||e.some(s=>s?.type==="tool_result")?void 0:e.filter(s=>s?.type==="text"&&typeof s.text=="string").map(s=>s.text).join(`
+`).trim()||void 0}catch{return}}function to(t){if(t)try{let n=H.statSync(t).size;for(let e of n>At?[n-At,0]:[0]){let d=H.openSync(t,"r"),s;try{let u=Buffer.alloc(n-e);H.readSync(d,u,0,u.length,e),s=u.toString("utf8")}finally{H.closeSync(d)}let w=s.split(`
+`);for(let u=w.length-1;u>=(e>0?1:0);u--){let l=eo(w[u]);if(l)return l}}}catch{}}function oo(t,n){if(!n)return;let e=Tt(P.resolve(n));if(!e)return;let d=P.resolve(t);if(ae(P.dirname(d))!==ae(P.resolve(e)))return;let s=P.basename(d);if(!(!/\.md$/i.test(s)||/^MEMORY\.md$/i.test(s)))return{root:P.resolve(e),rel:s}}function ro(t){if(!t||typeof t!="object")return;let n=t,e=n.file;if(!(n.type!=="text"||!e||typeof e.content!="string"||typeof e.filePath!="string"))return t}function Bt(t){try{if(t.toolName!=="Read"||!t.filePath||!t.sessionId||t.offset!==void 0||t.limit!==void 0)return"";let n=ro(t.response);if(!n||n.file.startLine>1)return"";let e=rt(t.filePath)??oo(t.filePath,t.cwd);if(!e)return"";let d=H.readFileSync(P.join(e.root,e.rel),"utf8");if(Oe(d)<Qt)return"";let s=to(t.transcriptPath);if(!s)return"";let w=new Set(A(s)).size,u=Math.min(w,Math.max(2,Math.ceil(w/2))),l=G({name:P.basename(e.rel).replace(/\.md$/i,""),file:e.rel},d),E=z(W(l),s,l.length).map(o=>({...o.unit,score:o.score,matched:o.matched})),$=l.map(o=>new Set(A(o.content))),C=[...new Set(A(s))].filter(o=>{let i=$.filter(a=>a.has(o)).length;return i>0&&i<=Math.floor(l.length/2)});if(C.length===0)return"";let S=[],m=0;for(let o of E){let i=new Set(A(o.content));if(!(o.matched<u||!C.some(a=>i.has(a)))&&!S.some(a=>o.startLine<=a.endLine&&o.endLine>=a.startLine)){if(m+o.tokens>Zt&&S.length>0)break;S.push(o),m+=o.tokens}}if(S.length===0)return"";S.sort((o,i)=>o.startLine-i.startLine);let M=d.split(/\r?\n/),L=S.map(o=>`--- lines ${o.startLine}-${o.endLine} of ${M.length} ---
+${M.slice(o.startLine-1,o.endLine).join(`
+`)}`),R=l.filter(o=>o.kind==="section"&&o.path.length<=2&&!S.some(i=>o.startLine<=i.endLine&&o.endLine>=i.startLine)),T=[...new Map(R.map(o=>[`${o.startLine}-${o.endLine}`,`${o.path.join(" > ")} (lines ${o.startLine}-${o.endLine})`])).values()],O=`${`minnimemory: this Read shows the ${S.length} section(s) of ${e.rel} that match the current prompt.`+(T.length?` Not shown: ${T.join("; ")}. Read with offset and limit to see one.`:" Read with offset and limit to see the rest.")}
 
-// src/surface/cli.ts
-import { spawnSync } from "node:child_process";
-import fs3 from "node:fs";
-import os from "node:os";
-import path2 from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+${L.join(`
 
-// src/bench/bench.ts
-import fs from "node:fs";
-function parseWorkload(content) {
-  return content.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "" && !l.startsWith("#"));
-}
-function readWorkload(file) {
-  let content;
-  try {
-    content = fs.readFileSync(file, "utf8");
-  } catch {
-    throw new BenchError(`cannot read workload file: ${file}`);
-  }
-  const tasks = parseWorkload(content);
-  if (tasks.length === 0) {
-    throw new BenchError(`workload file has no tasks: ${file}
-  one task description per line, # for comments`);
-  }
-  return tasks;
-}
-function unitId(u) {
-  return `${u.onDemandFile}:${u.startLine}`;
-}
-function unitLabel(u) {
-  return `${u.onDemandFile} > ${u.heading}`;
-}
-function buildIndex(manifest, root) {
-  const units = allRouted(manifest).flatMap(
-    (m) => unitsOf({ name: m.name, file: m.file }, loadOnDemandContent(root, m.file))
-  );
-  return buildSearchIndex(units, new Map(allRouted(manifest).map((m) => [m.name, m.triggers])));
-}
-function model(manifest, tasks, options = {}) {
-  const index = options.root ? buildIndex(manifest, options.root) : void 0;
-  const unit = index ? "section" : "file";
-  const carried = /* @__PURE__ */ new Set();
-  const tokensOf = /* @__PURE__ */ new Map();
-  const labelOf = /* @__PURE__ */ new Map();
-  const onDemandFileOf = /* @__PURE__ */ new Map();
-  for (const m of allRouted(manifest)) {
-    tokensOf.set(m.name, m.tokens);
-    labelOf.set(m.name, m.name);
-    onDemandFileOf.set(m.name, m.name);
-  }
-  if (index) {
-    for (const u of index.units) {
-      tokensOf.set(unitId(u), u.tokens);
-      labelOf.set(unitId(u), unitLabel(u));
-      onDemandFileOf.set(unitId(u), u.onDemandFile);
-    }
-  }
-  const turns = [];
-  let unroutedTurns = 0;
-  tasks.forEach((task, i) => {
-    const matched = index ? selectUnits(rankUnits(index, task)).map((r) => unitId(r.unit)) : rankOnDemandFiles(manifest, task).filter((r) => r.score > 0).map((m) => m.name);
-    if (matched.length === 0) unroutedTurns++;
-    const opened2 = matched.filter((id) => !carried.has(id));
-    for (const id of opened2) carried.add(id);
-    const carriedTokens2 = [...carried].reduce((n, id) => n + (tokensOf.get(id) ?? 0), 0);
-    turns.push({
-      turn: i + 1,
-      task,
-      opened: opened2.map((id) => labelOf.get(id) ?? id),
-      carried: [...carried].map((id) => labelOf.get(id) ?? id),
-      compiledTokens: manifest.prefix.after + carriedTokens2,
-      baselineTokens: manifest.prefix.before
-    });
-  });
-  const compiledTotal = turns.reduce((n, t) => n + t.compiledTokens, 0);
-  const baselineTotal = turns.reduce((n, t) => n + t.baselineTokens, 0);
-  const touchedOnDemandFiles = new Set([...carried].map((id) => onDemandFileOf.get(id) ?? id));
-  const opened = allRouted(manifest).map((m) => m.name).filter((n) => touchedOnDemandFiles.has(n));
-  const carriedTokens = [...carried].reduce((n, id) => n + (tokensOf.get(id) ?? 0), 0);
-  const steadyStatePerTurn = manifest.prefix.after + carriedTokens;
-  const steadyStateGainPerTurn = manifest.prefix.before - steadyStatePerTurn;
-  const saving = baselineTotal - compiledTotal;
-  let breakEvenTurn;
-  if (saving >= 0) {
-    breakEvenTurn = turns.findIndex((_, i) => {
-      const upTo = turns.slice(0, i + 1);
-      return upTo.reduce((n, t) => n + t.baselineTokens - t.compiledTokens, 0) >= 0;
-    });
-    breakEvenTurn = breakEvenTurn >= 0 ? breakEvenTurn + 1 : void 0;
-  } else if (steadyStateGainPerTurn > 0) {
-    breakEvenTurn = turns.length + Math.ceil(-saving / steadyStateGainPerTurn);
-  }
-  return {
-    unit,
-    turns,
-    baselineTotal,
-    compiledTotal,
-    saving,
-    savingPct: baselineTotal === 0 ? 0 : saving / baselineTotal * 100,
-    onDemandOpened: opened,
-    onDemandNeverOpened: allRouted(manifest).map((m) => m.name).filter((n) => !touchedOnDemandFiles.has(n)),
-    unroutedTurns,
-    steadyStatePerTurn,
-    steadyStateGainPerTurn,
-    breakEvenTurn
-  };
-}
-
-// src/bench/benchReport.ts
-function pct(part, whole) {
-  if (whole === 0) return "0.0%";
-  return `${(part / whole * 100).toFixed(1)}%`;
-}
-function signed(n) {
-  return n >= 0 ? `saves ${formatTokens(n)}` : `costs ${formatTokens(-n)} more`;
-}
-function renderBounds(b, tokenizer) {
-  const out = [""];
-  out.push(`  exact, over ${formatTokens(b.turns)} turns. No workload, no assumptions.`);
-  out.push("");
-  out.push(`    original memory file      ${formatTokens(b.baselinePerTurn).padStart(8)} tokens per turn`);
-  out.push(`    compiled always-loaded    ${formatTokens(b.compiledPerTurn).padStart(8)} tokens per turn`);
-  out.push(`    OnDemandMemory, all of it   ${formatTokens(b.totalOnDemandTokens).padStart(8)} tokens, on demand`);
-  out.push("");
-  out.push(`    best case, no OnDemandMemory file ever opened`);
-  out.push(
-    `      ${formatTokens(b.baselineTotal)} -> ${formatTokens(b.bestCaseTotal)} tokens, ${signed(b.bestCaseSaving)} (${pct(b.bestCaseSaving, b.baselineTotal)})`
-  );
-  out.push("");
-  out.push(`    worst case, every OnDemandMemory file opened on turn 1 and carried`);
-  out.push(
-    `      ${formatTokens(b.baselineTotal)} -> ${formatTokens(b.worstCaseTotal)} tokens, ${signed(b.worstCaseSaving)}`
-  );
-  out.push("");
-  out.push(`    break-even: ${formatTokens(b.breakEvenCarriedTokens)} tokens of OnDemandMemory can sit in`);
-  out.push(`    context from turn 1 to the end and come out even. Past that the compiled`);
-  out.push(`    shape costs more than the file it replaced.`);
-  out.push("");
-  out.push(`  tokenizer: ${tokenizer}, an offline estimate`);
-  out.push("");
-  return out.join("\n");
-}
-function renderModel(m, tokenizer) {
-  const out = [""];
-  const turns = m.turns.length;
-  out.push(`  MODEL, not a measurement. ${formatTokens(turns)} turns from the workload you supplied.`);
-  out.push(
-    m.unit === "section" ? `  routed at section level, as recall() does: a hit carries the section, not the file.` : `  routed at file level, as an agent reading a whole file the OnDemandMemory list named would.`
-  );
-  out.push("");
-  out.push(
-    `    memory tokens over the session   ${formatTokens(m.baselineTotal)} -> ${formatTokens(m.compiledTotal)}`
-  );
-  out.push(`    ${signed(m.saving)}${m.saving >= 0 ? ` (${m.savingPct.toFixed(1)}%)` : ""}`);
-  out.push("");
-  if (m.onDemandOpened.length > 0) {
-    out.push(`    opened and carried (${m.onDemandOpened.length}):`);
-    for (const name of m.onDemandOpened) out.push(`      ${name}`);
-    out.push("");
-  }
-  if (m.onDemandNeverOpened.length > 0) {
-    out.push(`    never opened (${m.onDemandNeverOpened.length}) - this is where the saving comes from:`);
-    for (const name of m.onDemandNeverOpened) out.push(`      ${name}`);
-    out.push("");
-  }
-  out.push(`    one more turn, once everything this workload opens is in context:`);
-  out.push(
-    `      ${formatTokens(m.steadyStatePerTurn)} vs ${formatTokens(m.turns[0]?.baselineTokens ?? 0)} baseline, ${m.steadyStateGainPerTurn >= 0 ? `saves ${formatTokens(m.steadyStateGainPerTurn)}` : `costs ${formatTokens(-m.steadyStateGainPerTurn)} more`} per turn`
-  );
-  out.push("");
-  if (m.saving < 0 && m.steadyStateGainPerTurn <= 0) {
-    out.push(`    this workload never breaks even. The OnDemandMemory files it opens are large enough that`);
-    out.push(`    carrying them costs more every turn than the original file did, so a longer`);
-    out.push(`    session loses more, not less. Splitting differently, or not compiling this`);
-    out.push(`    file at all, is the honest answer here.`);
-    out.push("");
-  } else if (m.saving < 0 && m.breakEvenTurn !== void 0) {
-    out.push(
-      `    behind by ${formatTokens(-m.saving)} at turn ${formatTokens(m.turns.length)}, recovering ${formatTokens(m.steadyStateGainPerTurn)} per turn:`
-    );
-    out.push(`    breaks even around turn ${formatTokens(m.breakEvenTurn)} if nothing further opens.`);
-    out.push("");
-  } else if (m.saving >= 0 && m.breakEvenTurn !== void 0) {
-    out.push(`    ahead from turn ${formatTokens(m.breakEvenTurn)} onward.`);
-    out.push("");
-  }
-  if (m.unroutedTurns > 0) {
-    out.push(
-      `    ${formatTokens(m.unroutedTurns)} of ${formatTokens(turns)} turns matched no OnDemandMemory file at all.`
-    );
-    out.push(`    Those turns are cheap here, but a real agent may have needed something and`);
-    out.push(`    not been routed to it. Check them before trusting the total.`);
-    out.push("");
-  }
-  out.push(`  what this number is conditional on:`);
-  out.push(`    - your workload being what a real session looks like. It is your file;`);
-  out.push(`      the tool cannot tell whether it is representative.`);
-  if (m.unit === "section") {
-    out.push(`    - every section recall() returns being carried for the rest of the session,`);
-    out.push(`      up to its token cap per turn. A real agent may widen with outline() or`);
-    out.push(`      read the whole file anyway.`);
-  } else {
-    out.push(`    - every OnDemandMemory file whose triggers match being opened in full. A real`);
-    out.push(`      agent may read one and stop, or ignore one the list offered.`);
-  }
-  out.push(`    - memory tokens only. Reasoning, tool results and conversation are excluded`);
-  out.push(`      from both sides, so this ratio is not a session bill.`);
-  out.push("");
-  out.push(`  For observed usage against a live agent, measure a real multi-turn session with`);
-  out.push(`  and without the compile. That is the only path allowed to call a number measured.`);
-  out.push("");
-  out.push(`  tokenizer: ${tokenizer}, an offline estimate`);
-  out.push("");
-  return out.join("\n");
-}
-function renderNoWorkload() {
-  return [
-    "",
-    "  No workload given, so only the exact bounds above are available.",
-    "",
-    "  A session number needs a workload: a file with one task description per line,",
-    "  describing what you actually do in this repo.",
-    "",
-    "    minnimemory bench --workload tasks.txt",
-    "",
-    "  minnimemory ships no default task list on purpose. A number produced from tasks",
-    "  the tool invented for itself would say more about the tool than about your repo.",
-    ""
-  ].join("\n");
-}
-
-// src/runtime/preciseRead.ts
-import fs2 from "node:fs";
-import path from "node:path";
-var PRECISE_MIN_TOKENS = 800;
-var PRECISE_KEEP_TOKENS = 1200;
-var TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
-function promptOf(line) {
-  try {
-    const entry = JSON.parse(line);
-    if (entry.type !== "user" || entry.isMeta === true || entry.message?.role !== "user") return void 0;
-    const content = entry.message.content;
-    if (typeof content === "string") return content.trim() || void 0;
-    if (!Array.isArray(content) || content.some((c) => c?.type === "tool_result")) return void 0;
-    const text = content.filter((c) => c?.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n").trim();
-    return text || void 0;
-  } catch {
-    return void 0;
-  }
-}
-function lastPromptFrom(transcriptPath) {
-  if (!transcriptPath) return void 0;
-  try {
-    const size = fs2.statSync(transcriptPath).size;
-    for (const from of size > TRANSCRIPT_TAIL_BYTES ? [size - TRANSCRIPT_TAIL_BYTES, 0] : [0]) {
-      const fd = fs2.openSync(transcriptPath, "r");
-      let text;
-      try {
-        const buf = Buffer.alloc(size - from);
-        fs2.readSync(fd, buf, 0, buf.length, from);
-        text = buf.toString("utf8");
-      } finally {
-        fs2.closeSync(fd);
-      }
-      const lines = text.split("\n");
-      for (let i = lines.length - 1; i >= (from > 0 ? 1 : 0); i--) {
-        const prompt = promptOf(lines[i]);
-        if (prompt) return prompt;
-      }
-    }
-  } catch {
-  }
-  return void 0;
-}
-function memoryFolderTopic(file, cwd) {
-  if (!cwd) return void 0;
-  const dir = recordedMemoryDir(path.resolve(cwd));
-  if (!dir) return void 0;
-  const abs = path.resolve(file);
-  if (pathKey(path.dirname(abs)) !== pathKey(path.resolve(dir))) return void 0;
-  const name = path.basename(abs);
-  if (!/\.md$/i.test(name) || /^MEMORY\.md$/i.test(name)) return void 0;
-  return { root: path.resolve(dir), rel: name };
-}
-function asReadResult(value) {
-  if (!value || typeof value !== "object") return void 0;
-  const r = value;
-  const file = r["file"];
-  if (r["type"] !== "text" || !file || typeof file["content"] !== "string" || typeof file["filePath"] !== "string") return void 0;
-  return value;
-}
-function preciseReadOutput(input) {
-  try {
-    if (input.toolName !== "Read" || !input.filePath || !input.sessionId) return "";
-    if (input.offset !== void 0 || input.limit !== void 0) return "";
-    const result = asReadResult(input.response);
-    if (!result || result.file.startLine > 1) return "";
-    const owner = onDemandOwner(input.filePath) ?? memoryFolderTopic(input.filePath, input.cwd);
-    if (!owner) return "";
-    const fileText = fs2.readFileSync(path.join(owner.root, owner.rel), "utf8");
-    if (estimateTokens(fileText) < PRECISE_MIN_TOKENS) return "";
-    const prompt = lastPromptFrom(input.transcriptPath);
-    if (!prompt) return "";
-    const distinct = new Set(tokenize(prompt)).size;
-    const needed = Math.min(distinct, Math.max(2, Math.ceil(distinct / 2)));
-    const units = unitsOf({ name: path.basename(owner.rel).replace(/\.md$/i, ""), file: owner.rel }, fileText);
-    const all = rankUnits(buildSearchIndex(units), prompt, units.length).map((r) => ({ ...r.unit, score: r.score, matched: r.matched }));
-    const unitTerms = units.map((u) => new Set(tokenize(u.content)));
-    const distinctive = [...new Set(tokenize(prompt))].filter((t) => {
-      const n = unitTerms.filter((s) => s.has(t)).length;
-      return n > 0 && n <= Math.floor(units.length / 2);
-    });
-    if (distinctive.length === 0) return "";
-    const kept = [];
-    let used = 0;
-    for (const m of all) {
-      const terms = new Set(tokenize(m.content));
-      if (m.matched < needed || !distinctive.some((t) => terms.has(t))) continue;
-      if (kept.some((k) => m.startLine <= k.endLine && m.endLine >= k.startLine)) continue;
-      if (used + m.tokens > PRECISE_KEEP_TOKENS && kept.length > 0) break;
-      kept.push(m);
-      used += m.tokens;
-    }
-    if (kept.length === 0) return "";
-    kept.sort((a, b) => a.startLine - b.startLine);
-    const lines = fileText.split(/\r?\n/);
-    const shown = kept.map((m) => `--- lines ${m.startLine}-${m.endLine} of ${lines.length} ---
-${lines.slice(m.startLine - 1, m.endLine).join("\n")}`);
-    const left = units.filter((u) => u.kind === "section" && u.path.length <= 2 && !kept.some((k) => u.startLine <= k.endLine && u.endLine >= k.startLine));
-    const leftLines = [...new Map(left.map((m) => [`${m.startLine}-${m.endLine}`, `${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine})`])).values()];
-    const note = `minnimemory: this Read shows the ${kept.length} section(s) of ${owner.rel} that match the current prompt.` + (leftLines.length ? ` Not shown: ${leftLines.join("; ")}. Read with offset and limit to see one.` : ` Read with offset and limit to see the rest.`);
-    const content = `${note}
-
-${shown.join("\n\n")}
-`;
-    const out = { ...result, file: { ...result.file, content, numLines: content.split("\n").length, startLine: 1 } };
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", updatedToolOutput: out } });
-  } catch {
-    return "";
-  }
-}
-
-// src/surface/cli.ts
-var MCP_STASHED = false;
-var USAGE = `
-minnimemory ${VERSION}  the agent memory compiler
+`)}
+`,r={...n,file:{...n.file,content:O,numLines:O.split(`
+`).length,startLine:1}};return JSON.stringify({hookSpecificOutput:{hookEventName:"PostToolUse",updatedToolOutput:r}})}catch{return""}}var ao=!1,Z=`
+minnimemory ${be}  the agent memory compiler
 
 usage: the four lifecycle verbs, the CLI and the MCP basic profile share.
 The only difference is who writes: the CLI writes to disk itself, the MCP tools return the
@@ -650,906 +222,190 @@ doctor options
 <folder> is required: a repo, a memory directory, or a single file. With none, minnimemory asks
 for it (in a terminal) or stops and says so. Type . for the current folder. An @import that
 points outside the folder is not read; the report names it.
-`;
-function listRules() {
-  const lines = ["", "  rule set", ""];
-  for (const r of RULES) {
-    lines.push(`  ${r.id.padEnd(8)}${r.severity.padEnd(6)}${r.title}`);
-  }
-  lines.push("");
-  return lines.join("\n");
-}
-function parseSeverity(value, fallback) {
-  if (value === void 0) return fallback;
-  if (value === "low" || value === "med" || value === "high") return value;
-  throw new Error(`--fail-on must be one of low, med, high (got "${value}")`);
-}
-function parseIds(value) {
-  if (!value) return [];
-  return value.split(",").map((s) => s.trim()).filter(Boolean);
-}
-function renderRecall(result, headingsOnly) {
-  if (result.matches.length === 0) {
-    return `
-  no match for "${result.query}"
+`;function lo(){let t=["","  rule set",""];for(let n of it)t.push(`  ${n.id.padEnd(8)}${n.severity.padEnd(6)}${n.title}`);return t.push(""),t.join(`
+`)}function uo(t,n){if(t===void 0)return n;if(t==="low"||t==="med"||t==="high")return t;throw new Error(`--fail-on must be one of low, med, high (got "${t}")`)}function Ht(t){return t?t.split(",").map(n=>n.trim()).filter(Boolean):[]}function co(t,n){return t.matches.length===0?`
+  no match for "${t.query}"
 
-`;
-  }
-  if (headingsOnly) {
-    return `${result.matches.map((m) => `${m.onDemandFile} > ${m.path.join(" > ")} (${m.tokens} tokens)`).join("\n")}
-`;
-  }
-  return `${result.matches.map(
-    (m) => `## ${m.onDemandFile} > ${m.path.join(" > ")} (lines ${m.startLine}-${m.endLine}, ${m.tokens} tokens, score ${m.score})
+`:n?`${t.matches.map(e=>`${e.onDemandFile} > ${e.path.join(" > ")} (${e.tokens} tokens)`).join(`
+`)}
+`:`${t.matches.map(e=>`## ${e.onDemandFile} > ${e.path.join(" > ")} (lines ${e.startLine}-${e.endLine}, ${e.tokens} tokens, score ${e.score})
 
-${m.content}`
-  ).join("\n\n---\n\n")}
-`;
-}
-function defaultCommand(opts) {
-  return opts.isTTY ? "usage" : "serve";
-}
-function processRunner() {
-  return (command, args) => {
-    const shell = process.platform === "win32";
-    const result = spawnSync(command, shell ? shellArgs(args) : args, {
-      encoding: "utf8",
-      shell
-    });
-    return {
-      code: result.status,
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-      error: result.error
-    };
-  };
-}
-function parseScope(value) {
-  if (value === void 0 || value === "user") return "user";
-  if (value === "project" || value === "local") return value;
-  throw new Error(`--scope must be one of user, project, local (got "${value}")`);
-}
-function parseHost(value) {
-  if (value === void 0) return void 0;
-  if (value === "cursor" || value === "windsurf" || value === "json" || value === "codex") return value;
-  throw new Error(`--host must be one of codex, cursor, windsurf, json (got "${value}")`);
-}
-function parseBudget(value) {
-  if (value === void 0) return void 0;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n <= 0 || n > MAX_BUDGET) throw new Error(`--budget must be a whole number of tokens from 1 to ${MAX_BUDGET.toLocaleString("en-US")} (got "${value}")`);
-  return Math.floor(n);
-}
-function runMcpCommand(target, values) {
-  let root;
-  try {
-    root = path2.resolve(target);
-    if (!fs3.existsSync(root) || !fs3.statSync(root).isDirectory()) {
-      throw new McpTargetError(`not a directory: ${root}`);
-    }
-  } catch (err) {
-    if (err instanceof McpTargetError) {
-      process.stderr.write(`
-  error: ${err.message}
+${e.content}`).join(`
 
-`);
-      return 2;
-    }
-    process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+---
 
-`);
-    return 2;
-  }
-  const profileName = values.profile ?? "basic";
-  if (profileName !== "basic" && profileName !== "full") {
-    process.stderr.write(`
-  error: --profile must be one of basic, full (got "${profileName}")
+`)}
+`}function po(t){return t.isTTY?"usage":"serve"}function Jt(){return(t,n)=>{let e=process.platform==="win32",d=no(t,e?Ye(n):n,{encoding:"utf8",shell:e});return{code:d.status,stdout:d.stdout??"",stderr:d.stderr??"",error:d.error}}}function fo(t){if(t===void 0||t==="user")return"user";if(t==="project"||t==="local")return t;throw new Error(`--scope must be one of user, project, local (got "${t}")`)}var mo=["cursor","windsurf","json","codex"];function Gt(t){if(t!==void 0){if(mo.includes(t))return t;throw new Error(`--host must be one of codex, cursor, windsurf, json (got "${t}")`)}}function Wt(t){if(t===void 0)return;let n=Number(t);if(!Number.isInteger(n)||n<=0||n>re)throw new Error(`--budget must be a whole number of tokens from 1 to ${re.toLocaleString("en-US")} (got "${t}")`);return Math.floor(n)}function ho(t,n){let e;try{if(e=k.resolve(t),!b.existsSync(e)||!b.statSync(e).isDirectory())throw new U(`not a directory: ${e}`)}catch(s){return s instanceof U?(process.stderr.write(`
+  error: ${s.message}
 
-`);
-    return 2;
-  }
-  void (async () => {
-    const [{ StdioServerTransport }, { createMcpServer }] = await Promise.all([
-      import("./chunks/stdio-5QN5KZ3B.mjs"),
-      import("./chunks/mcpServer-NLSYI5ID.mjs")
-    ]);
-    const server = createMcpServer(root, {
-      profile: profileName,
-      allowWrite: values["allow-write"] === true,
-      host: currentHost()
-    });
-    await server.connect(new StdioServerTransport());
-  })().catch((err) => {
-    process.stderr.write(`
-  mcp server failed: ${err.message ?? String(err)}
-`);
-    process.exitCode = 1;
-  });
-  return 0;
-}
-function uninstallNotes() {
-  const folders = compiledFolders();
-  const lines = [];
-  if (folders.length > 0) {
-    lines.push("still compiled (they keep working without minnimemory; to put the originals back, undo each one):");
-    for (const d of folders) lines.push(`  ${undoCommand(d)}`);
-  }
-  const codex = currentHost() === "codex";
-  lines.push(`kept: ${path2.dirname(discoveryRecordPath())} (init records, ${codex ? "" : "the load log, the usage log, "}undo backups); delete it yourself once you have checked undo-backups/.`);
-  lines.push(`restart ${hostLabel()}.`);
-  return lines.join("\n");
-}
-var FOLDER_COMMANDS = /* @__PURE__ */ new Set(["init", "doctor", "apply", "undo", "bench"]);
-function doctorMayRun(target) {
-  if (readDiscovery(process.cwd())) return true;
-  const dir = folderOf(target);
-  return detectPhase(dir) === "compiled" || readFolderManifest(dir) !== void 0 || readRepoRecord(dir) !== void 0;
-}
-function folderOf(target) {
-  const abs = path2.resolve(target);
-  return fs3.existsSync(abs) && fs3.statSync(abs).isFile() ? path2.dirname(abs) : abs;
-}
-function repoRecordInUse(target) {
-  if (readDiscovery(process.cwd())) return void 0;
-  const dir = folderOf(target);
-  return readRepoRecord(dir) ? repoRecordPath(dir) : void 0;
-}
-function askForFolder(command) {
-  const usage = `minnimemory ${command} <folder>`;
-  if (process.stdin.isTTY !== true) {
-    process.stderr.write(`
-  error: name the folder to read: ${usage} (type . for the current folder)
+`),2):(process.stderr.write(`
+  unexpected error: ${s.stack??String(s)}
 
-`);
-    return void 0;
-  }
-  process.stdout.write(`
-  Which folder should minnimemory ${command} read? Only that folder and the folders below it are read.
-  folder: `);
-  const answer = readLineSync().trim();
-  if (answer === "") {
-    process.stderr.write(`
-  error: no folder given; run ${usage}
+`),2)}let d=n.profile??"basic";return d!=="basic"&&d!=="full"?(process.stderr.write(`
+  error: --profile must be one of basic, full (got "${d}")
 
-`);
-    return void 0;
-  }
-  return answer;
-}
-function readLineSync() {
-  const byte = Buffer.alloc(1);
-  let line = "";
-  for (; ; ) {
-    let n;
-    try {
-      n = fs3.readSync(0, byte, 0, 1, null);
-    } catch {
-      break;
-    }
-    if (n === 0) break;
-    const c = byte.toString("utf8");
-    if (c === "\n") break;
-    if (c !== "\r") line += c;
-  }
-  return line;
-}
-function main(argv) {
-  let parsed;
-  try {
-    parsed = parseArgs({
-      args: argv,
-      allowPositionals: true,
-      strict: true,
-      options: {
-        json: { type: "boolean", default: false },
-        write: { type: "boolean", default: false },
-        force: { type: "boolean", default: false },
-        update: { type: "boolean", default: false },
-        "allow-secrets": { type: "boolean", default: false },
-        "episodic-json": { type: "boolean", default: false },
-        "allow-write": { type: "boolean", default: false },
-        "follow-external-imports": { type: "boolean", default: false },
-        "include-auto-memory": { type: "boolean", default: false },
-        scope: { type: "string" },
-        "dry-run": { type: "boolean", default: false },
-        "auto-memory": { type: "boolean", default: false },
-        hook: { type: "boolean", default: false },
-        "no-hook": { type: "boolean", default: false },
-        "precise-reads": { type: "boolean", default: false },
-        precise: { type: "boolean", default: false },
-        remove: { type: "boolean", default: false },
-        host: { type: "string" },
-        "host-file": { type: "string", multiple: true },
-        loaded: { type: "string", multiple: true },
-        "memory-dir": { type: "string" },
-        "from-log": { type: "boolean", default: false },
-        "only-this-folder": { type: "boolean", default: false },
-        turns: { type: "string" },
-        workload: { type: "string" },
-        "whole-files": { type: "boolean", default: false },
-        "max-tokens": { type: "string" },
-        headings: { type: "boolean", default: false },
-        dir: { type: "string" },
-        profile: { type: "string" },
-        plan: { type: "string" },
-        ci: { type: "boolean", default: false },
-        rules: { type: "boolean", default: false },
-        map: { type: "boolean", default: false },
-        diff: { type: "string" },
-        "fail-on": { type: "string" },
-        budget: { type: "string" },
-        policy: { type: "string" },
-        only: { type: "string" },
-        ignore: { type: "string" },
-        help: { type: "boolean", short: "h", default: false },
-        version: { type: "boolean", short: "v", default: false }
-      }
-    });
-  } catch (err) {
-    const message = err.message;
-    const hint = /argument is ambiguous/.test(message) ? "\n  (a value that starts with '-' must be written as --option=value; --budget must be positive anyway)" : "";
-    process.stderr.write(`
-  error: ${message}${hint}
-${USAGE}`);
-    return 2;
-  }
-  const { values, positionals } = parsed;
-  if (values.help) {
-    process.stdout.write(USAGE);
-    return 0;
-  }
-  if (values.version) {
-    process.stdout.write(`${VERSION}
-`);
-    return 0;
-  }
-  if (values.rules) {
-    process.stdout.write(listRules());
-    return 0;
-  }
-  let command;
-  if (positionals[0] === void 0) {
-    if (defaultCommand({ isTTY: process.stdin.isTTY === true }) === "usage") {
-      process.stdout.write(USAGE);
-      return 0;
-    }
-    command = "mcp";
-  } else {
-    command = positionals[0];
-  }
-  const retired = ["include-auto-memory", "follow-external-imports", "auto-memory"].filter((f) => values[f] === true);
-  if (retired.length > 0) {
-    process.stderr.write(`  note: ${retired.map((f) => `--${f}`).join(", ")} no longer does anything: minnimemory reads only the folder you name
-`);
-  }
-  let named = positionals[1] === void 0 ? void 0 : /^~($|[\\/])/.test(positionals[1]) ? resolveReported(positionals[1]) : positionals[1];
-  if (named === void 0 && typeof values["memory-dir"] === "string") named = values["memory-dir"];
-  if (named === void 0 && ["doctor", "apply", "undo"].includes(command)) {
-    const rec = readDiscovery(process.cwd());
-    if (rec) named = rec.target ?? rec.memoryDir ?? rec.project;
-  }
-  if (named === void 0 && FOLDER_COMMANDS.has(command)) {
-    named = askForFolder(command);
-    if (named === void 0) return 2;
-  }
-  let target = named ?? ".";
-  if (command !== "install" && command !== "uninstall") {
-    if (values.host !== void 0) {
-      if (!isHostName(values.host)) {
-        process.stderr.write(`
-  error: --host must be claude or codex for ${command} (got "${values.host}")
+`),2):((async()=>{let[{StdioServerTransport:s},{createMcpServer:w}]=await Promise.all([import("./chunks/stdio-4LUDCT2D.mjs"),import("./chunks/mcpServer-FZD7UJ46.mjs")]);await w(e,{profile:d,allowWrite:n["allow-write"]===!0,host:Pe()}).connect(new s)})().catch(s=>{process.stderr.write(`
+  mcp server failed: ${s.message??String(s)}
+`),process.exitCode=1}),0)}function yo(){let t=Ct(),n=[];if(t.length>0){n.push("still compiled (they keep working without minnimemory; to put the originals back, undo each one):");for(let d of t)n.push(`  ${_e(d)}`)}let e=N().keepsLoadAndUsageLogs;return n.push(`kept: ${k.dirname(vt())} (init records, ${e?"the load log, the usage log, ":""}undo backups); delete it yourself once you have checked undo-backups/.`),n.push(`restart ${ie()}.`),n.join(`
+`)}var go=new Set(["init","doctor","apply","undo","bench"]);function wo(t){if(V(process.cwd()))return!0;let n=xe(t);return fe(n)==="compiled"||he(n)!==void 0||ue(n)!==void 0}function xe(t){let n=k.resolve(t);return b.existsSync(n)&&b.statSync(n).isFile()?k.dirname(n):n}function ko(t){if(V(process.cwd()))return;let n=xe(t);return ue(n)?Be(n):void 0}function bo(t){let n=`minnimemory ${t} <folder>`;if(process.stdin.isTTY!==!0){process.stderr.write(`
+  error: name the folder to read: ${n} (type . for the current folder)
 
-`);
-        return 2;
-      }
-      setHost(values.host);
-    } else if (["init", "doctor", "apply", "undo", "mcp"].includes(command)) {
-      setHost(detectHost({ env: process.env, home: os.homedir(), cwd: process.cwd() }));
-    } else setHost("claude");
-  }
-  if (values.policy !== void 0 && command !== "doctor") {
-    process.stderr.write(`
+`);return}process.stdout.write(`
+  Which folder should minnimemory ${t} read? Only that folder and the folders below it are read.
+  folder: `);let e=vo().trim();if(e===""){process.stderr.write(`
+  error: no folder given; run ${n}
+
+`);return}return e}function vo(){let t=Buffer.alloc(1),n="";for(;;){let e;try{e=b.readSync(0,t,0,1,null)}catch{break}if(e===0)break;let d=t.toString("utf8");if(d===`
+`)break;d!=="\r"&&(n+=d)}return n}function $o(t){let n;try{n=io({args:t,allowPositionals:!0,strict:!0,options:{json:{type:"boolean",default:!1},write:{type:"boolean",default:!1},force:{type:"boolean",default:!1},update:{type:"boolean",default:!1},"allow-secrets":{type:"boolean",default:!1},"episodic-json":{type:"boolean",default:!1},"allow-write":{type:"boolean",default:!1},"follow-external-imports":{type:"boolean",default:!1},"include-auto-memory":{type:"boolean",default:!1},scope:{type:"string"},"dry-run":{type:"boolean",default:!1},"auto-memory":{type:"boolean",default:!1},hook:{type:"boolean",default:!1},"no-hook":{type:"boolean",default:!1},"precise-reads":{type:"boolean",default:!1},precise:{type:"boolean",default:!1},remove:{type:"boolean",default:!1},host:{type:"string"},"host-file":{type:"string",multiple:!0},loaded:{type:"string",multiple:!0},"memory-dir":{type:"string"},"from-log":{type:"boolean",default:!1},"only-this-folder":{type:"boolean",default:!1},turns:{type:"string"},workload:{type:"string"},"whole-files":{type:"boolean",default:!1},"max-tokens":{type:"string"},headings:{type:"boolean",default:!1},dir:{type:"string"},profile:{type:"string"},plan:{type:"string"},ci:{type:"boolean",default:!1},rules:{type:"boolean",default:!1},map:{type:"boolean",default:!1},diff:{type:"string"},"fail-on":{type:"string"},budget:{type:"string"},policy:{type:"string"},only:{type:"string"},ignore:{type:"string"},help:{type:"boolean",short:"h",default:!1},version:{type:"boolean",short:"v",default:!1}}})}catch(r){let o=r.message,i=/argument is ambiguous/.test(o)?`
+  (a value that starts with '-' must be written as --option=value; --budget must be positive anyway)`:"";return process.stderr.write(`
+  error: ${o}${i}
+${Z}`),2}let{values:e,positionals:d}=n;if(e.help)return process.stdout.write(Z),0;if(e.version)return process.stdout.write(`${be}
+`),0;if(e.rules)return process.stdout.write(lo()),0;let s;if(d[0]===void 0){if(po({isTTY:process.stdin.isTTY===!0})==="usage")return process.stdout.write(Z),0;s="mcp"}else s=d[0];let w=["include-auto-memory","follow-external-imports","auto-memory"].filter(r=>e[r]===!0);w.length>0&&process.stderr.write(`  note: ${w.map(r=>`--${r}`).join(", ")} no longer does anything: minnimemory reads only the folder you name
+`);let u=d[1]===void 0?void 0:/^~($|[\\/])/.test(d[1])?Y(d[1]):d[1];if(u===void 0&&typeof e["memory-dir"]=="string"&&(u=e["memory-dir"]),u===void 0&&["doctor","apply","undo"].includes(s)){let r=V(process.cwd());r&&(u=r.target??r.memoryDir??r.project)}if(u===void 0&&go.has(s)&&(u=bo(s),u===void 0))return 2;let l=u??".";if(s!=="install"&&s!=="uninstall")if(e.host!==void 0){if(!se(e.host))return process.stderr.write(`
+  error: --host must be claude or codex for ${s} (got "${e.host}")
+
+`),2;B(e.host)}else["init","doctor","apply","undo","mcp"].includes(s)?B(Ne({env:process.env,home:Ut.homedir(),cwd:process.cwd()})):B("claude");if(e.policy!==void 0&&s!=="doctor")return process.stderr.write(`
   error: --policy is a doctor option: \`minnimemory doctor <folder> --policy <file>\`
 
-`);
-    return 2;
-  }
-  if (values.diff !== void 0 && values.diff !== "summary" && values.diff !== "full") {
-    process.stderr.write(`
-  error: --diff takes summary or full, not "${values.diff}"
+`),2;if(e.diff!==void 0&&e.diff!=="summary"&&e.diff!=="full")return process.stderr.write(`
+  error: --diff takes summary or full, not "${e.diff}"
 
-`);
-    return 2;
-  }
-  const diffMode = values.diff;
-  const reportedFiles = [...values.loaded ?? [], ...values["host-file"] ?? []].map((f) => resolveReported(f));
-  if (values["from-log"] === true) {
-    const log = readLoadLog(process.cwd());
-    if (!log) {
-      process.stderr.write(`
+`),2;let E=e.diff,$=[...e.loaded??[],...e["host-file"]??[]].map(r=>Y(r));if(e["from-log"]===!0){let r=He(process.cwd());if(!r)return process.stderr.write(`
   error: no load log for ${process.cwd()}: open Claude Code in this folder once (install adds the hook that writes it), then run this again
 
-`);
-      return 2;
-    }
-    for (const f of Object.keys(log.files)) if (/\.md$/i.test(f) && fs3.existsSync(f)) reportedFiles.push(path2.resolve(f));
-  }
-  const memoryDirFlag = typeof values["memory-dir"] === "string" ? resolveReported(values["memory-dir"]) : void 0;
-  if (memoryDirFlag && currentHost() === "codex" && inCodexMemories(hostConfigDir("codex"), memoryDirFlag)) {
-    process.stderr.write(
-      `
-  error: ${memoryDirFlag.split(path2.sep).join("/")} is Codex's own memories folder: Codex generates and rewrites it, so minnimemory lists it in the map and never compiles it. Run init on the project; Codex's AGENTS.md files are what it works on.
+`),2;for(let o of Object.keys(r.files))/\.md$/i.test(o)&&b.existsSync(o)&&$.push(k.resolve(o))}let C=typeof e["memory-dir"]=="string"?Y(e["memory-dir"]):void 0;if(C&&N().isGeneratedMemory(C))return process.stderr.write(`
+  error: ${C.split(k.sep).join("/")} is Codex's own memories folder: Codex generates and rewrites it, so minnimemory lists it in the map and never compiles it. Run init on the project; Codex's AGENTS.md files are what it works on.
 
-`
-    );
-    return 2;
-  }
-  const anyReport = reportedFiles.length > 0 || memoryDirFlag !== void 0;
-  const freshReport = anyReport || values["only-this-folder"] === true ? { files: [...new Set(reportedFiles)], ...memoryDirFlag ? { memoryDir: memoryDirFlag } : {}, source: values["from-log"] === true && (values.loaded ?? []).length === 0 ? "log" : "terminal", ...values["only-this-folder"] === true ? { onlyThisFolder: true } : {} } : void 0;
-  const fromRepo = freshReport || !["doctor", "apply"].includes(command) ? void 0 : repoRecordInUse(target);
-  const recorded = freshReport ? void 0 : recordedSet(process.cwd()) ?? (fromRepo ? repoRecordedSet(folderOf(target)) : void 0);
-  if (fromRepo) {
-    process.stderr.write(`  note: this machine has no init record for this project, so ${command} uses the one in the repo: ${path2.relative(process.cwd(), fromRepo).split(path2.sep).join("/") || fromRepo}
-`);
-  }
-  const discoverOptions = {
-    cwd: process.cwd(),
-    ...freshReport ? { reported: freshReport } : recorded ? { reported: recorded } : {}
-  };
-  let userTargetNote;
-  let mapFolder;
-  if (["init", "doctor", "apply", "undo"].includes(command)) {
-    const userTarget = codexUserTarget(target, { reported: freshReport });
-    if (userTarget) {
-      userTargetNote = codexUserTargetNote(target, userTarget);
-      mapFolder = path2.resolve(target);
-      target = userTarget.dir;
-      named = userTarget.dir;
-      if (command !== "init" && values.json !== true) process.stdout.write(`
-  ${userTargetNote}
-`);
-    }
-  }
-  if (command === "install" || command === "uninstall") {
-    let options;
-    try {
-      options = {
-        write: values.write === true,
-        scope: parseScope(values.scope),
-        dryRun: values["dry-run"] === true,
-        force: values.force === true,
-        host: parseHost(values.host),
-        // The hooks are on by default (DESIGN.md 6.12, decision 3); --no-hook opts out. Only
-        // Claude Code (no --host) and Codex have hooks the tool knows; the JSON-only hosts
-        // (cursor, windsurf, json) get no hook, so the default avoids runInstall's refusal there.
-        hook: (values.host === void 0 || values.host === "codex") && values["no-hook"] !== true,
-        preciseReads: values["precise-reads"] === true,
-        // The hook calls this very CLI by path (driftHookCommand); under npx that is the cached
-        // package, under a checkout it is dist/surface/cli.js.
-        cliPath: process.argv[1] ? realOrResolved(process.argv[1]) : void 0
-      };
-    } catch (err) {
-      process.stderr.write(`
-  error: ${err.message}
+`),2;let m=$.length>0||C!==void 0||e["only-this-folder"]===!0?{files:[...new Set($)],...C?{memoryDir:C}:{},source:e["from-log"]===!0&&(e.loaded??[]).length===0?"log":"terminal",...e["only-this-folder"]===!0?{onlyThisFolder:!0}:{}}:void 0,M=m||!["doctor","apply"].includes(s)?void 0:ko(l),L=m?void 0:St(process.cwd())??(M?Ue(xe(l)):void 0);M&&process.stderr.write(`  note: this machine has no init record for this project, so ${s} uses the one in the repo: ${k.relative(process.cwd(),M).split(k.sep).join("/")||M}
+`);let R={cwd:process.cwd(),...m?{reported:m}:L?{reported:L}:{}},T,j;if(["init","doctor","apply","undo"].includes(s)){let r=wt(l,{reported:m});r&&(T=kt(l,r),j=k.resolve(l),l=r.dir,u=r.dir,s!=="init"&&e.json!==!0&&process.stdout.write(`
+  ${T}
+`))}if(s==="install"||s==="uninstall"){let r;try{r={write:e.write===!0,scope:fo(e.scope),dryRun:e["dry-run"]===!0,force:e.force===!0,host:Gt(e.host),hook:qe(Gt(e.host))&&e["no-hook"]!==!0,preciseReads:e["precise-reads"]===!0,cliPath:process.argv[1]?xo(process.argv[1]):void 0}}catch(y){return process.stderr.write(`
+  error: ${y.message}
 
-`);
-      return 2;
-    }
-    const env = { home: os.homedir(), platform: process.platform, cwd: process.cwd(), configDir: claudeConfigDir(), codexConfigDir: hostConfigDir("codex"), ...process.env.CODEX_HOME ? { codexHome: process.env.CODEX_HOME } : {} };
-    const removing = command === "uninstall" || values.remove === true;
-    if (removing && options.host === "codex") setHost("codex");
-    const result = removing ? runUninstall(options, env, processRunner()) : runInstall(options, env, processRunner());
-    const stream = result.exitCode === 0 ? process.stdout : process.stderr;
-    stream.write(`
-${result.output}
-`);
-    if (removing) stream.write(`${uninstallNotes()}
+`),2}let o={home:Ut.homedir(),platform:process.platform,cwd:process.cwd(),configDir:Le(),codexConfigDir:je("codex"),...process.env.CODEX_HOME?{codexHome:process.env.CODEX_HOME}:{}},i=s==="uninstall"||e.remove===!0;i&&se(r.host)&&B(r.host);let a=i?Ke(r,o,Jt()):Ve(r,o,Jt()),f=a.exitCode===0?process.stdout:process.stderr;return f.write(`
+${a.output}
+`),i&&f.write(`${yo()}
 
-`);
-    return result.exitCode;
-  }
-  if (command === "init" || command === "apply") {
-    if (command === "init" && (values.write === true || values.update === true)) {
-      process.stderr.write(`
+`),a.exitCode}if(s==="init"||s==="apply"){if(s==="init"&&(e.write===!0||e.update===!0))return process.stderr.write(`
   error: init never writes; use apply
 
-`);
-      return 2;
-    }
-    const profileName = values.profile ?? "auto";
-    if (profileName !== "auto" && !isProfileName(profileName)) {
-      process.stderr.write(`
-  error: --profile must be one of auto, none, routing, output, full (got "${profileName}")
+`),2;let r=e.profile??"auto";if(r!=="auto"&&!Ee(r))return process.stderr.write(`
+  error: --profile must be one of auto, none, routing, output, full (got "${r}")
 
-`);
-      return 2;
-    }
-    let budget;
-    try {
-      budget = parseBudget(values.budget);
-    } catch (err) {
-      process.stderr.write(`
-  error: ${err.message}
+`),2;let o;try{o=Wt(e.budget)}catch(g){return process.stderr.write(`
+  error: ${g.message}
 
-`);
-      return 2;
-    }
-    const write = command === "apply";
-    const explicitProfile = profileName === "auto" ? void 0 : profileName;
-    const episodicJson = values["episodic-json"] === true;
-    const cliFlags = [...currentHost() === "codex" ? ["--host codex"] : [], ...explicitProfile ? [`--profile ${explicitProfile}`] : [], ...episodicJson ? ["--episodic-json"] : [], ...values["only-this-folder"] === true ? ["--only-this-folder"] : []];
-    const previewOptions2 = {
-      budget,
-      force: values.force === true,
-      profileName: explicitProfile,
-      episodicJson,
-      discover: discoverOptions
-    };
-    try {
-      if (!write) {
-        const mapDir = fs3.existsSync(target) && fs3.statSync(target).isFile() ? path2.dirname(path2.resolve(target)) : path2.resolve(target);
-        let folderWs;
-        try {
-          const ws = discover(target, discoverOptions);
-          if (ws.shape === "memory-dir") folderWs = ws;
-        } catch {
-          folderWs = void 0;
-        }
-        const codexMap = !folderWs && currentHost() === "codex" ? buildCodexMap(process.cwd(), { projectRoot: mapFolder ?? mapDir }) : void 0;
-        const map = codexMap ? void 0 : folderWs ? memoryFolderMap(folderWs) : buildClaudeMap(mapDir, { machine: false, projectRoot: mapDir });
-        const mapText = codexMap ? renderCodexMap(codexMap) : renderClaudeMap(map);
-        const mapJson = () => codexMap ? codexMapJson(codexMap) : claudeMapJson(map);
-        if (values.map === true) {
-          process.stdout.write(values.json ? `${JSON.stringify(codexMap ?? map, null, 2)}
-` : mapText);
-          return 0;
-        }
-        if (!values.json) process.stdout.write(mapText);
-        if (userTargetNote && !values.json) process.stdout.write(`  ${userTargetNote}
+`),2}let i=s==="apply",a=r==="auto"?void 0:r,f=e["episodic-json"]===!0,y=[...N().cliFlags,...a?[`--profile ${a}`]:[],...f?["--episodic-json"]:[],...e["only-this-folder"]===!0?["--only-this-folder"]:[]],p={budget:o,force:e.force===!0,profileName:a,episodicJson:f,discover:R};try{if(!i){let h=b.existsSync(l)&&b.statSync(l).isFile()?k.dirname(k.resolve(l)):k.resolve(l),v;try{let _=K(l,R);_.shape==="memory-dir"&&(v=_)}catch{v=void 0}let D=!v&&N().loadsChain?Qe(process.cwd(),{projectRoot:j??h}):void 0,te=D?void 0:v?ze(v):Ge(h,{machine:!1,projectRoot:h}),Ce=D?Ze(D):Xe(te),zt=()=>D?et(D):We(te);if(e.map===!0)return process.stdout.write(e.json?`${JSON.stringify(D??te,null,2)}
+`:Ce),0;e.json||process.stdout.write(Ce),T&&!e.json&&process.stdout.write(`  ${T}
 
-`);
-        const preview = buildPreview(target, previewOptions2);
-        if (values.json) {
-          const json = JSON.parse(renderPreviewJson(preview, named, cliFlags));
-          process.stdout.write(`${JSON.stringify({ map: mapJson(), ...json }, null, 2)}
-`);
-        } else process.stdout.write(renderPreviewText(preview, { color: false, ci: values.ci === true, target: named, flags: cliFlags, diff: diffMode }));
-        const folder = preview.workspace.folderRoot ?? path2.resolve(target);
-        const asMemory = preview.workspace.claudeMemoryFolder ? folder : void 0;
-        const where = saveDiscovery(process.cwd(), freshReport ? { ...freshReport, ...freshReport.memoryDir ?? asMemory ? { memoryDir: freshReport.memoryDir ?? asMemory } : {} } : void 0, folder);
-        if (!freshReport && codexMap) saveStart(process.cwd(), codexMap.chain.map((c) => c.abs));
-        if (freshReport && !values.json) process.stdout.write(where ? `  saved what ${hostLabel()} loads here for apply, doctor and undo: ${where}
+`);let J=ge(l,p);if(e.json){let _=JSON.parse(ke(J,u,y));process.stdout.write(`${JSON.stringify({map:zt(),..._},null,2)}
+`)}else process.stdout.write(we(J,{color:!1,ci:e.ci===!0,target:u,flags:y,diff:E}));let oe=J.workspace.folderRoot??k.resolve(l),Se=J.workspace.claudeMemoryFolder?oe:void 0,Me=$t(process.cwd(),m?{...m,...m.memoryDir??Se?{memoryDir:m.memoryDir??Se}:{}}:void 0,oe);!m&&D&&Mt(process.cwd(),D.chain.map(_=>_.abs)),m&&!e.json&&process.stdout.write(Me?`  saved what ${ie()} loads here for apply, doctor and undo: ${Me}
 
-` : "  could not save the locations; pass them again to apply\n\n");
-        const foreign = foreignMemoryFolderNote(process.cwd(), folder);
-        if (foreign) process.stderr.write(`  ${foreign}
+`:`  could not save the locations; pass them again to apply
 
-`);
-        return 0;
-      }
-      const workspace = discover(target, discoverOptions);
-      if (workspace.shape === "memory-dir" && !workspace.reported) {
-        process.stderr.write(
-          `
+`);let Te=xt(process.cwd(),oe);return Te&&process.stderr.write(`  ${Te}
+
+`),0}let g=K(l,R);if(g.shape==="memory-dir"&&!g.reported)return process.stderr.write(`
   error: apply refused: nothing reported the files Claude Code loads, so an import of this folder's files from outside it could break. Run from Claude Code (the agent passes them), or add --from-log (Claude Code's own load log for this folder), or --loaded <path> for each file. If nothing outside this folder loads it, pass --only-this-folder. Nothing was changed.
 
-`
-        );
-        return 2;
-      }
-      const plan = planFolder(workspace, { budget: budget ?? workspace.manifest?.budget, profileName: explicitProfile, episodicJson, sortAnyway: values.force === true });
-      if (values.plan !== void 0 && plan.plan !== values.plan) {
-        process.stderr.write(
-          `
-  error: the plan on disk no longer matches --plan ${values.plan} (now ${plan.plan}); run doctor again
+`),2;let x=dt(g,{budget:o??g.manifest?.budget,profileName:a,episodicJson:f,sortAnyway:e.force===!0});if(e.plan!==void 0&&x.plan!==e.plan)return process.stderr.write(`
+  error: the plan on disk no longer matches --plan ${e.plan} (now ${x.plan}); run doctor again
 
-`
-        );
-        return 2;
-      }
-      if (plan.verdict === "nothing") {
-        process.stdout.write(renderFolderPlan(plan, { write: true }));
-        return 0;
-      }
-      if (plan.verdict === "leave" && values.force !== true) {
-        process.stderr.write(
-          `
-  error: ${leaveReason(plan)} (${plan.before} -> ${plan.after} tokens; break-even ${plan.bounds.breakEvenCarriedTokens} tokens of OnDemandMemory open all session)
+`),2;if(x.verdict==="nothing")return process.stdout.write(pe(x,{write:!0})),0;if(x.verdict==="leave"&&e.force!==!0)return process.stderr.write(`
+  error: ${gt(x)} (${x.before} -> ${x.after} tokens; break-even ${x.bounds.breakEvenCarriedTokens} tokens of OnDemandMemory open all session)
   Pass --force to write it anyway.
 
-`
-        );
-        return 2;
-      }
-      const report = renderFolderPlan(plan, { write: true, target: named });
-      applyFolderPlan(plan, { allowSecrets: values["allow-secrets"] === true });
-      process.stdout.write(report);
-      return 0;
-    } catch (err) {
-      if (err instanceof DiscoveryError || err instanceof FolderError) {
-        process.stderr.write(`
-  error: ${err.message}
+`),2;let ee=pe(x,{write:!0,target:u});return lt(x,{allowSecrets:e["allow-secrets"]===!0}),process.stdout.write(ee),0}catch(g){return g instanceof q||g instanceof X?(process.stderr.write(`
+  error: ${g.message}
 
-`);
-        return 2;
-      }
-      process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+`),2):(process.stderr.write(`
+  unexpected error: ${g.stack??String(g)}
 
-`);
-      return 2;
-    }
-  }
-  if (command === "undo") {
-    try {
-      let folderRoot;
-      try {
-        const ws = discover(target);
-        folderRoot = ws.folderRoot;
-      } catch (err) {
-        if (!(err instanceof DiscoveryError)) throw err;
-      }
-      if (!folderRoot) {
-        process.stdout.write("\n  nothing to undo\n\n");
-        return 0;
-      }
-      const currentManifest = readFolderManifest(folderRoot);
-      const oldVersion = currentManifest ? void 0 : readOldManifestVersion(folderRoot);
-      const outcome = oldVersion ? planOldManifestUndo(folderRoot, oldVersion) : !currentManifest && manifestLost(folderRoot) ? planLostManifestUndo(folderRoot) : planFolderUndo(folderRoot, currentManifest);
-      if (outcome.kind === "none") {
-        if (!currentManifest && manifestLost(folderRoot)) {
-          process.stderr.write(`
-  error: ${undoNoBackupMessage(folderRoot)}
+`),2)}}if(s==="undo")try{let r;try{r=K(l).folderRoot}catch(h){if(!(h instanceof q))throw h}if(!r)return process.stdout.write(`
+  nothing to undo
 
-`);
-          return 2;
-        }
-        process.stdout.write("\n  nothing to undo\n\n");
-        return 0;
-      }
-      if (outcome.kind === "kept-only") {
-        process.stderr.write(`
-  error: undo has nothing left to restore here: ${keptOnlyMessage(outcome.kept)}
+`),0;let o=he(r),i=o?void 0:bt(r),a=i?yt(r,i):!o&&me(r)?ft(r):pt(r,o);if(a.kind==="none")return!o&&me(r)?(process.stderr.write(`
+  error: ${at(r)}
 
-`);
-        return 2;
-      }
-      if (outcome.kind === "missing-original") {
-        process.stderr.write(
-          `
-  error: no original copy under ${COMPILED_DIR_NAME}/original/ for: ${outcome.files.join(", ")}.
+`),2):(process.stdout.write(`
+  nothing to undo
+
+`),0);if(a.kind==="kept-only")return process.stderr.write(`
+  error: undo has nothing left to restore here: ${mt(a.kept)}
+
+`),2;if(a.kind==="missing-original")return process.stderr.write(`
+  error: no original copy under ${ne}/original/ for: ${a.files.join(", ")}.
   Backups stay on the machine that ran apply (they are gitignored), and a clone that re-applied backs up the compiled file, not the original; on a clone, the way back is git history.
 
-`
-        );
-        return 2;
-      }
-      const refusal = undoRefusal(outcome.plan);
-      if (refusal && values.force !== true) {
-        process.stderr.write(`
-  error: ${refusal}
+`),2;let f=ut(a.plan);if(f&&e.force!==!0)return process.stderr.write(`
+  error: ${f}
 
-`);
-        return 2;
-      }
-      const savedTo = refusal ? backupBeforeForcedUndo(outcome.plan) : void 0;
-      applyFolderUndo(outcome.plan);
-      process.stdout.write(
-        `
-  restored ${outcome.plan.operations.filter((o) => o.op === "write" || o.op === "move").length} file(s) in ${folderRoot}
-  deleted: ${outcome.plan.operations.filter((o) => o.op === "delete").length} path(s), ${COMPILED_DIR_NAME}/ ${outcome.plan.keptBackups?.length ? "kept" : "included"}
-` + (keptBackupsNote(outcome.plan) ? `  ${keptBackupsNote(outcome.plan)}
-` : "") + (outcome.plan.left?.length ? `  left in place: ${outcome.plan.left.join(", ")} (without manifest.json undo cannot tell which files there it wrote)
-` : "") + (savedTo ? `  the files as they were before this undo are copied to ${savedTo.split(path2.sep).join("/")}
-` : "") + "\n"
-      );
-      return 0;
-    } catch (err) {
-      if (err instanceof FolderError) {
-        process.stderr.write(`
-  error: ${err.message}
+`),2;let y=f?ct(a.plan):void 0;ht(a.plan);let p=[a.plan,...a.plan.chain??[]],g=h=>h.operations.filter(v=>v.op==="write"||v.op==="move").length,x=h=>h.operations.filter(v=>v.op==="delete").length,ee=p.length===1?`
+  restored ${g(a.plan)} file(s) in ${r}
+`:`
+  restored ${p.reduce((h,v)=>h+g(v),0)} file(s) in ${p.length} folders:
+`+p.map(h=>`    ${h===a.plan?r:h.root}: ${g(h)} file(s)
+`).join("");return process.stdout.write(ee+`  deleted: ${p.reduce((h,v)=>h+x(v),0)} path(s), ${ne}/ ${a.plan.keptBackups?.length?"kept":"included"}
+`+(ce(a.plan)?`  ${ce(a.plan)}
+`:"")+(a.plan.left?.length?`  left in place: ${a.plan.left.join(", ")} (without manifest.json undo cannot tell which files there it wrote)
+`:"")+(y?`  the files as they were before this undo are copied to ${y.split(k.sep).join("/")}
+`:"")+`
+`),0}catch(r){return r instanceof X?(process.stderr.write(`
+  error: ${r.message}
 
-`);
-        return 2;
-      }
-      process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+`),2):(process.stderr.write(`
+  unexpected error: ${r.stack??String(r)}
 
-`);
-      return 2;
-    }
-  }
-  if (command === "mcp") {
-    if (!MCP_STASHED) return runMcpCommand(target, values);
-    void (async () => {
-      const [{ StdioServerTransport }, { createDisabledMcpServer, DISABLED_MESSAGE }] = await Promise.all([
-        import("./chunks/stdio-5QN5KZ3B.mjs"),
-        import("./chunks/mcpServer-NLSYI5ID.mjs")
-      ]);
-      process.stderr.write(`
-  mcp: ${DISABLED_MESSAGE}
+`),2)}if(s==="mcp")return ao?((async()=>{let[{StdioServerTransport:r},{createDisabledMcpServer:o,DISABLED_MESSAGE:i}]=await Promise.all([import("./chunks/stdio-4LUDCT2D.mjs"),import("./chunks/mcpServer-FZD7UJ46.mjs")]);process.stderr.write(`
+  mcp: ${i}
 
-`);
-      await createDisabledMcpServer().connect(new StdioServerTransport());
-    })().catch((err) => {
-      process.stderr.write(`
-  mcp server failed: ${err.message ?? String(err)}
-`);
-      process.exitCode = 1;
-    });
-    return 0;
-  }
-  if (command === "recall") {
-    const query = positionals.slice(2).join(" ").trim();
-    if (!query) {
-      process.stderr.write(`
+`),await o().connect(new r)})().catch(r=>{process.stderr.write(`
+  mcp server failed: ${r.message??String(r)}
+`),process.exitCode=1}),0):ho(l,e);if(s==="recall"){let r=d.slice(2).join(" ").trim();if(!r)return process.stderr.write(`
   error: recall needs a query: minnimemory recall <path> <query...>
 
-`);
-      return 2;
-    }
-    let maxTokens;
-    if (values["max-tokens"] !== void 0) {
-      const n = Number(values["max-tokens"]);
-      if (!Number.isFinite(n) || n <= 0) {
-        process.stderr.write(`
-  error: --max-tokens must be a positive number (got "${values["max-tokens"]}")
+`),2;let o;if(e["max-tokens"]!==void 0){let a=Number(e["max-tokens"]);if(!Number.isFinite(a)||a<=0)return process.stderr.write(`
+  error: --max-tokens must be a positive number (got "${e["max-tokens"]}")
 
-`);
-        return 2;
-      }
-      maxTokens = Math.floor(n);
-    }
-    const root = path2.resolve(target);
-    try {
-      const phase = detectPhase(root);
-      let result;
-      if (phase === "compiled") {
-        result = recall(root, loadManifest(root), query, { maxTokens });
-      } else if (phase === "memory-dir") {
-        result = recallDir(root, query, { maxTokens });
-      } else {
-        process.stderr.write(
-          `
-  error: ${root} is neither a compiled workspace (.minnimemory/manifest.json) nor a manifest-less memory directory (an index file plus topic files) - nothing for recall to query
+`),2;o=Math.floor(a)}let i=k.resolve(l);try{let a=fe(i),f;if(a==="compiled")f=Ae(i,de(i),r,{maxTokens:o});else if(a==="memory-dir")f=Et(i,r,{maxTokens:o});else return process.stderr.write(`
+  error: ${i} is neither a compiled workspace (.minnimemory/manifest.json) nor a manifest-less memory directory (an index file plus topic files) - nothing for recall to query
 
-`
-        );
-        return 2;
-      }
-      process.stdout.write(renderRecall(result, values.headings === true));
-      return 0;
-    } catch (err) {
-      if (err instanceof McpTargetError || err instanceof RecallDirError) {
-        process.stderr.write(`
-  error: ${err.message}
+`),2;return process.stdout.write(co(f,e.headings===!0)),0}catch(a){return a instanceof U||a instanceof Ot?(process.stderr.write(`
+  error: ${a.message}
 
-`);
-        return 2;
-      }
-      process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+`),2):(process.stderr.write(`
+  unexpected error: ${a.stack??String(a)}
 
-`);
-      return 2;
-    }
-  }
-  if (command === "hook") {
-    let raw = "";
-    try {
-      raw = fs3.readFileSync(0, "utf8");
-    } catch {
-      raw = "";
-    }
-    let maxTokens;
-    if (values["max-tokens"] !== void 0) {
-      const n = Number(values["max-tokens"]);
-      if (Number.isFinite(n) && n > 0) maxTokens = Math.floor(n);
-    }
-    try {
-      const input = parseHookInput(raw);
-      if (currentHost() === "codex") {
-        try {
-          markCodexHookRan(hostConfigDir("codex"), input.cwd ?? process.cwd());
-        } catch {
-        }
-      }
-      const text = renderHook(input, { headings: values.headings === true, maxTokens, dir: values.dir });
-      if (text) process.stdout.write(`${text}
-`);
-    } catch (err) {
-      process.stderr.write(`
-  hook: ${err.message ?? String(err)}
-`);
-    }
-    return 0;
-  }
-  if (command === "loaded") {
-    let raw = "";
-    try {
-      raw = fs3.readFileSync(0, "utf8");
-    } catch {
-      raw = "";
-    }
-    try {
-      const event = JSON.parse(raw);
-      recordLoad(event);
-      if (event.load_reason === "compact" && typeof event.session_id === "string") forgetPlaced(event.session_id);
-    } catch {
-    }
-    return 0;
-  }
-  if (command === "read") {
-    let raw = "";
-    try {
-      raw = fs3.readFileSync(0, "utf8");
-    } catch {
-      raw = "";
-    }
-    const input = parseReadHookInput(raw);
-    recordRead(input);
-    if (values.precise === true) {
-      const out = preciseReadOutput(input);
-      if (out) process.stdout.write(`${out}
-`);
-    }
-    return 0;
-  }
-  if (command === "drift") {
-    let raw = "";
-    try {
-      raw = fs3.readFileSync(0, "utf8");
-    } catch {
-      raw = "";
-    }
-    try {
-      const input = parseHookInput(raw);
-      const text = renderDriftNotice(input);
-      if (text) process.stdout.write(`${text}
-`);
-    } catch (err) {
-      process.stderr.write(`
-  drift: ${err.message ?? String(err)}
-`);
-    }
-    return 0;
-  }
-  if (command === "bench") {
-    try {
-      const root = path2.resolve(target);
-      const manifest = loadManifest(root);
-      const turns = values.turns === void 0 ? 50 : Number(values.turns);
-      if (!Number.isFinite(turns)) {
-        throw new BenchError(`--turns must be a positive whole number (got "${values.turns}")`);
-      }
-      const b = bounds(manifest, turns);
-      if (values.workload === void 0) {
-        if (values.json === true) {
-          process.stdout.write(`${JSON.stringify({ bounds: b, tokenizer: manifest.tokenizer }, null, 2)}
-`);
-          return 0;
-        }
-        process.stdout.write(renderBounds(b, manifest.tokenizer));
-        process.stdout.write(renderNoWorkload());
-        return 0;
-      }
-      const tasks = readWorkload(values.workload);
-      const m = model(manifest, tasks, values["whole-files"] === true ? {} : { root });
-      if (values.json === true) {
-        process.stdout.write(
-          `${JSON.stringify({ bounds: b, model: m, tokenizer: manifest.tokenizer }, null, 2)}
-`
-        );
-        return 0;
-      }
-      process.stdout.write(renderBounds(b, manifest.tokenizer));
-      process.stdout.write(renderModel(m, manifest.tokenizer));
-      return 0;
-    } catch (err) {
-      if (err instanceof BenchError || err instanceof McpTargetError) {
-        process.stderr.write(`
-  error: ${err.message}
+`),2)}}if(s==="hook"){let r="";try{r=b.readFileSync(0,"utf8")}catch{r=""}let o;if(e["max-tokens"]!==void 0){let i=Number(e["max-tokens"]);Number.isFinite(i)&&i>0&&(o=Math.floor(i))}try{let i=ye(r);try{N().recordHookRan(i.cwd??process.cwd())}catch{}let a=N().waitLine?Dt(i):"",f=Pt(i,{headings:e.headings===!0,maxTokens:o,dir:e.dir}),y=[a,f].filter(Boolean).join(`
 
-`);
-        return 2;
-      }
-      process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+`);y&&process.stdout.write(`${y}
+`)}catch(i){process.stderr.write(`
+  hook: ${i.message??String(i)}
+`)}return 0}if(s==="loaded"){let r="";try{r=b.readFileSync(0,"utf8")}catch{r=""}try{let o=JSON.parse(r);Je(o),o.load_reason==="compact"&&typeof o.session_id=="string"&&Rt(o.session_id)}catch{}return 0}if(s==="read"){let r="";try{r=b.readFileSync(0,"utf8")}catch{r=""}let o=nt(r);if(st(o),e.precise===!0){let i=Bt(o);i&&process.stdout.write(`${i}
+`)}return 0}if(s==="drift"){let r="";try{r=b.readFileSync(0,"utf8")}catch{r=""}try{let o=ye(r),i=jt(o);i&&process.stdout.write(`${i}
+`)}catch(o){process.stderr.write(`
+  drift: ${o.message??String(o)}
+`)}return 0}if(s==="bench")try{let r=k.resolve(l),o=de(r),i=e.turns===void 0?50:Number(e.turns);if(!Number.isFinite(i))throw new I(`--turns must be a positive whole number (got "${e.turns}")`);let a=le(o,i);if(e.workload===void 0)return e.json===!0?(process.stdout.write(`${JSON.stringify({bounds:a,tokenizer:o.tokenizer},null,2)}
+`),0):(process.stdout.write($e(a,o.tokenizer)),process.stdout.write(It()),0);let f=Lt(e.workload),y=_t(o,f,e["whole-files"]===!0?{}:{root:r});return e.json===!0?(process.stdout.write(`${JSON.stringify({bounds:a,model:y,tokenizer:o.tokenizer},null,2)}
+`),0):(process.stdout.write($e(a,o.tokenizer)),process.stdout.write(Ft(y,o.tokenizer)),0)}catch(r){return r instanceof I||r instanceof U?(process.stderr.write(`
+  error: ${r.message}
 
-`);
-      return 2;
-    }
-  }
-  if (command !== "doctor") {
-    process.stderr.write(`
-  error: unknown command "${command}"
-${USAGE}`);
-    return 2;
-  }
-  if (!doctorMayRun(target)) {
-    process.stderr.write(
-      `
-  error: run init first: doctor checks memory init has already looked at, and init has no record for this project and ${target} has not been compiled. Run \`${initCommand(target)}\`.
+`),2):(process.stderr.write(`
+  unexpected error: ${r.stack??String(r)}
 
-`
-    );
-    return 2;
-  }
-  let previewOptions;
-  try {
-    let policy;
-    if (values.policy !== void 0) {
-      try {
-        policy = loadPolicy(values.policy);
-      } catch (err) {
-        if (err instanceof PolicyError) throw new Error(`--policy: ${err.message}`);
-        throw err;
-      }
-    }
-    previewOptions = {
-      discover: discoverOptions,
-      budget: parseBudget(values.budget) ?? policy?.budgets.always_on_tokens,
-      budgetFromPolicy: values.budget === void 0 && policy?.budgets.always_on_tokens !== void 0,
-      policy,
-      failOn: parseSeverity(values["fail-on"], "high"),
-      only: parseIds(values.only),
-      ignore: parseIds(values.ignore),
-      force: values.force === true
-    };
-  } catch (err) {
-    process.stderr.write(`
-  error: ${err.message}
+`),2)}if(s!=="doctor")return process.stderr.write(`
+  error: unknown command "${s}"
+${Z}`),2;if(!wo(l))return process.stderr.write(`
+  error: run init first: doctor checks memory init has already looked at, and init has no record for this project and ${l} has not been compiled. Run \`${Fe(l)}\`.
 
-`);
-    return 2;
-  }
-  try {
-    const preview = buildPreview(target, previewOptions);
-    if (values.json) {
-      process.stdout.write(`${renderPreviewJson(preview, named)}
-`);
-    } else {
-      const color = !values.ci && !process.env["NO_COLOR"] && process.stdout.isTTY === true;
-      process.stdout.write(renderPreviewText(preview, { color, ci: values.ci === true, target: named, diff: diffMode }));
-    }
-    return exitCodeFor(preview.audit.findings, preview.config.failOn);
-  } catch (err) {
-    if (err instanceof DiscoveryError || err instanceof FolderError) {
-      process.stderr.write(`
-  error: ${err.message}
+`),2;let O;try{let r;if(e.policy!==void 0)try{r=ot(e.policy)}catch(o){throw o instanceof tt?new Error(`--policy: ${o.message}`):o}O={discover:R,budget:Wt(e.budget)??r?.budgets.always_on_tokens,budgetFromPolicy:e.budget===void 0&&r?.budgets.always_on_tokens!==void 0,policy:r,failOn:uo(e["fail-on"],"high"),only:Ht(e.only),ignore:Ht(e.ignore),force:e.force===!0}}catch(r){return process.stderr.write(`
+  error: ${r.message}
 
-`);
-      return 2;
-    }
-    process.stderr.write(`
-  unexpected error: ${err.stack ?? String(err)}
+`),2}try{let r=ge(l,O);if(e.json)process.stdout.write(`${ke(r,u)}
+`);else{let o=!e.ci&&!process.env.NO_COLOR&&process.stdout.isTTY===!0;process.stdout.write(we(r,{color:o,ci:e.ci===!0,target:u,diff:E}))}return Nt(r.audit.findings,r.config.failOn)}catch(r){return r instanceof q||r instanceof X?(process.stderr.write(`
+  error: ${r.message}
 
-`);
-    return 2;
-  }
-}
-function realOrResolved(p) {
-  try {
-    return fs3.realpathSync(p);
-  } catch {
-    return path2.resolve(p);
-  }
-}
-function invokedDirectly() {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  try {
-    return fs3.realpathSync(fileURLToPath(import.meta.url)) === fs3.realpathSync(entry);
-  } catch {
-    return false;
-  }
-}
-if (invokedDirectly()) {
-  process.exitCode = main(process.argv.slice(2));
-}
-export {
-  MCP_STASHED,
-  defaultCommand,
-  main
-};
+`),2):(process.stderr.write(`
+  unexpected error: ${r.stack??String(r)}
+
+`),2)}}function xo(t){try{return b.realpathSync(t)}catch{return k.resolve(t)}}function Co(){let t=process.argv[1];if(!t)return!1;try{return b.realpathSync(so(import.meta.url))===b.realpathSync(t)}catch{return!1}}Co()&&(process.exitCode=$o(process.argv.slice(2)));export{ao as MCP_STASHED,po as defaultCommand,$o as main};
