@@ -2,7 +2,7 @@
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/minniai-com-minnimemory-plugin-qb88nf?v=6162f7730cc6cbdbbeac81fcb8d5cd94)](https://m8ven.ai/mcp/minniai-com-minnimemory-plugin-qb88nf?s=readme)
 
-MinniMemoryMCP 1.5.0 as a Claude Code plugin. It audits the memory files Claude Code loads
+MinniMemoryMCP 1.6.1 as a Claude Code plugin. It audits the memory files Claude Code loads
 (`CLAUDE.md`, `AGENTS.md`, your memory folder) and compiles them into a small AlwaysOnMemory
 body that loads every turn, plus OnDemandMemory files that load only when a task needs them.
 Every change is lossless and undoable: the originals are backed up first and `undo` puts them
@@ -126,5 +126,5 @@ run `undo` first if you want the originals back. The small records under
 
 ## Licence
 
-See `LICENSE`. Third-party code bundled in `server/` is listed with its licences in
+Apache-2.0, see `LICENSE`. Third-party code bundled in `server/` is listed with its licences in
 `THIRD_PARTY_NOTICES.md`.
